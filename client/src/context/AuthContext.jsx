@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginUserApi, registerUserApi, loginAdminApi } from '../services/api';
+import { loginUserApi, registerUserApi, loginAdminApi, logoutApi } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -13,11 +13,11 @@ export function AuthProvider({ children }) {
         return null;
       }
     }
-    // Default authenticated session for instant prototype inspection: Rahul Sharma (Normal User)
+    // Default session baseline for Rahul Sharma (Normal User)
     return {
       id: 'USR-101',
       name: 'Rahul Sharma',
-      email: 'rahul.sharma@arcsheild.com',
+      email: 'rahul.welder@iti.edu',
       role: 'USER',
       trade: 'Welding',
       workshop: 'Welding Bay 01',
@@ -37,31 +37,39 @@ export function AuthProvider({ children }) {
   const loginUser = async (email, password) => {
     const res = await loginUserApi(email, password);
     if (res.success && res.user) {
-      setCurrentUser(res.user);
-      return { success: true, user: res.user };
+      const authUser = { ...res.user, token: res.token, refreshToken: res.refreshToken };
+      setCurrentUser(authUser);
+      return { success: true, user: authUser };
     }
-    return { success: false, error: res.error || 'Login failed' };
+    return { success: false, error: res.message || res.error || 'Unable to authenticate with the provided credentials.' };
   };
 
   const registerUser = async (data) => {
     const res = await registerUserApi(data);
     if (res.success && res.user) {
-      setCurrentUser(res.user);
-      return { success: true, user: res.user };
+      const authUser = { ...res.user, token: res.token, refreshToken: res.refreshToken };
+      setCurrentUser(authUser);
+      return { success: true, user: authUser };
     }
-    return { success: false, error: res.error || 'Registration failed' };
+    return { success: false, error: res.message || res.error || 'Registration failed' };
   };
 
   const loginAdmin = async (email, password) => {
     const res = await loginAdminApi(email, password);
     if (res.success && res.user) {
-      setCurrentUser(res.user);
-      return { success: true, user: res.user };
+      const authUser = { ...res.user, token: res.token, refreshToken: res.refreshToken };
+      setCurrentUser(authUser);
+      return { success: true, user: authUser };
     }
-    return { success: false, error: res.error || 'Admin login failed' };
+    return { success: false, error: res.message || res.error || 'Unable to authenticate with the provided credentials.' };
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await logoutApi();
+    } catch (e) {
+      // Ignore network errors on logout
+    }
     setCurrentUser(null);
   };
 

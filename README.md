@@ -1,58 +1,189 @@
 # ARCShield — SMART CONNECTED SAFETY GEAR
-## Desktop-First Industrial Supervisor Safety Console (MERN Stack)
+## Industrial Supervisor Safety Console & Edge Telemetry Platform (MERN Stack)
 
-**ArcShield** is a professional, **Light-Themed Web Application** engineered for workshop supervisors, trainers, safety administrators, and training-centre managers in electrical and welding industrial training environments (ITIs).
+**ArcShield** is a production-grade, **Light-Themed Web Application** engineered for workshop supervisors, trainers, safety administrators, and workshop managers in electrical and welding industrial training environments (ITIs).
 
----
-
-### 🌟 Design & Architectural Principles
-
-1. **Light Theme Only**:
-   - Clean, bright white surface (`#ffffff`) on a soft neutral light-slate page background (`#f8fafc`).
-   - Deep navy/professional blue (`#0f294a`) for primary navigation, headings, and active state cues.
-   - Restrained 2–3 color palette with strict safety state badges (`SAFE` green, `WARNING` amber, `CRITICAL` red, `OFFLINE` gray).
-   - Zero AI gimmicks, no purple gradients, no glowing borders, no glassmorphism.
-
-2. **Complete Hardware Abstraction (No Component Details Exposed)**:
-   - The supervisor console communicates **operational safety results**, never raw chip names, pin numbers, or ADC values.
-   - `Temperature (°C)`, `Humidity (%)`, `UV / Arc Exposure (Normal / Elevated / High)`, `Gas Exposure (Normal / Elevated / High)`, `Motion & Fall Status`, `Helmet Wearing Compliance (%)`, `Workshop Zone`, and `Connection Status`.
-
-3. **Desktop-First Web Architecture**:
-   - Tailored for control room monitors, desktop displays, and supervisor laptops.
-   - Built with the full MERN stack (MongoDB, Express, React, Node.js) with real-time Socket.IO synchronization.
+The platform ingests real-time safety telemetry from connected smart PPE helmets (incorporating MAX6675 thermocouple, DHT22 ambient temperature/humidity, GUVA-S12SD UV/arc optical sensors, MQ-series combustible/toxic gas detectors, MPU6050 6-DOF IMU, TCRT5000 optical head-presence sensors, and NEO-6M GPS modules) and provides dual-tier web interfaces:
+1. **Personal Safety Dashboard (`/dashboard`)**: Strictly isolated personal safety telemetry, helmet fitment metrics, exposure analytics, personal alerts, and PDF/CSV compliance exports for the authenticated worker.
+2. **Admin Supervisor Console (`/admin/*`)**: Workshop-wide fleet management, multi-helmet matrix, active hazard dispatching, incident/near-miss reporting, 27-metric analytical breakdowns, and live operational security telemetry.
 
 ---
 
-### 📂 Main Application Navigation
+## 🏗️ Architecture & Production Topology
 
 ```text
-ArcShield
-├── 1. Overview (KPI Summary, Active Hazard Banner, Alert Frequency Chart, Incident Distribution, Zone Status)
-├── 2. Live Monitoring (Dense Operational Telemetry Table with Temp, Humidity, UV/Arc, Gas, Motion, Helmet Worn)
-├── 3. Alerts (Lifecycle: ACTIVE → ACKNOWLEDGED → INVESTIGATING → RESOLVED with Note Logging)
-├── 4. Helmets / Workers (Searchable Directory with Compliance Scores, Active Zones, and Worker Profile Drawer)
-├── 5. Incidents & Near-Misses (Formal Separation of Hazardous Incidents vs Preventive Near-Misses)
-├── 6. Analytics (Recharts Visualizations: Hourly Trends, Category Distribution, Compliance Curves, Response Times)
-├── 7. Reports (Daily/Weekly Audits, Incident Histories, CSV Export, and Official Printable PDF Generator)
-└── 8. Settings (Shift Schedules, Facility Configuration, Exposure Thresholds, Notification Dispatch)
+┌─────────────────────────────────────────────────────────┐
+│              VERCEL (React 19 + Vite Frontend)          │
+│  - SPA Routing & Strict Client Security Headers         │
+│  - Clean Light Industrial Theme (No Gimmicks)           │
+│  - Dynamic API Service Adapter (VITE_API_URL)          │
+└────────────────────────────┬────────────────────────────┘
+                             │ HTTPS / WSS
+                             ▼
+┌─────────────────────────────────────────────────────────┐
+│               RENDER (Node.js + Express API)            │
+│  - Helmet HTTP Security Headers & Content Security Policy│
+│  - Distributed Rate Limiting & Brute-Force Throttling   │
+│  - Cryptographic Auth (Argon2/bcrypt + Signed JWTs)    │
+│  - Strict Role-Based Access Control (USER vs ADMIN)     │
+│  - NoSQL Injection Sanitization & Zod Schema Validation │
+│  - Isolated Socket.IO Rooms (user:${id}, admin:monitor) │
+│  - Security Event Audit Logging & Health Telemetry      │
+└───────────────┬─────────────────────────┬───────────────┘
+                │                         │
+                ▼                         ▼
+┌──────────────────────────────┐ ┌──────────────────────────────┐
+│        MONGODB ATLAS         │ │            REDIS             │
+│   (Persistent Safety Data)   │ │  (Temporary State & Cache)   │
+│  - TLS/SSL ReplicaSet        │ │  - Brute-Force Lockouts      │
+│  - User & Helmet Registry    │ │  - Distributed Rate Limits   │
+│  - Incident & Alert Logs     │ │  - Revoked Token Blacklist   │
+│  - Auditable Security Events │ │  - Fast Session Invalidation │
+└──────────────────────────────┘ └──────────────────────────────┘
 ```
 
 ---
 
-### 🚀 Running the Application Locally
+## 🔒 Production Security Controls Implemented
 
-#### Backend Server (Node.js + Express + Socket.IO + MongoDB Support):
+1. **Authentication & Session Hardening**:
+   - High-entropy JWT signing for access tokens (`JWT_SECRET`) and refresh tokens (`JWT_REFRESH_SECRET`).
+   - Token blacklisting and session invalidation via Redis store.
+   - Generic login failure responses (`"Unable to authenticate with the provided credentials."`) to prevent account/email enumeration.
+
+2. **Login Brute-Force & Credential Stuffing Protection**:
+   - Redis-backed progressive throttling tracked across combined IP and normalized account identifier.
+   - 5 failed attempts locks out authentication for 15 minutes.
+
+3. **Strict Authorization & Role-Based Access Control (RBAC)**:
+   - Route protection enforced on Express middleware (`authenticateJwt`, `requireAdmin`, `requireOwnership`).
+   - All `/api/my/*` endpoints strictly derive worker identity and assigned helmet from the verified JWT payload (`req.user.id`).
+   - Normal users are prevented from querying or altering other workers' safety records.
+   - All `/api/admin/*` endpoints reject non-admin users with `403 Forbidden`.
+
+4. **Input Validation & Sanitization**:
+   - All API parameters, request bodies, telemetry packets, and alert lifecycle transitions validated using **Zod** schemas.
+   - Express NoSQL injection sanitization strips recursive MongoDB query operators (`$`, `{ $gt: ... }`) from untrusted inputs.
+
+5. **API Rate Limiting**:
+   - General API endpoints: 100 requests per 15 minutes.
+   - Authentication routes (`/api/auth/*`): 10 requests per 15 minutes.
+   - Telemetry ingestion routes: 120 packets per minute per device.
+   - Report generation routes: 20 requests per 15 minutes.
+
+6. **Socket.IO Room Isolation**:
+   - Worker clients are restricted to their dedicated user room (`user:${userId}`) and helmet room (`helmet:${helmetId}`).
+   - Organization-wide fleet monitoring broadcasts are isolated to the authenticated `admin:monitoring` room.
+
+7. **Audit & Security Logging**:
+   - Real-time logging of authentication successes/failures, RBAC violations, alert state transitions, and incident reports into MongoDB `SecurityEvent` collection.
+
+---
+
+## ⚙️ Environment Configuration
+
+### Backend Environment Variables (`server/.env` / Render Dashboard)
+
+| Variable | Description | Example / Default |
+| :--- | :--- | :--- |
+| `NODE_ENV` | Environment mode | `production` |
+| `PORT` | Web service listening port | `5000` |
+| `MONGODB_URI` | MongoDB Atlas TLS connection string | `mongodb+srv://<user>:<password>@cluster0.mongodb.net/arcshield?retryWrites=true&w=majority` |
+| `MONGODB_DB_NAME` | Database name | `arcshield` |
+| `REDIS_URL` | Redis connection URI | `rediss://default:<password>@<redis-host>:6379` |
+| `JWT_SECRET` | Cryptographic secret for Access Tokens | *(Generate with `openssl rand -base64 48`)* |
+| `JWT_REFRESH_SECRET` | Cryptographic secret for Refresh Tokens | *(Generate with `openssl rand -base64 48`)* |
+| `JWT_EXPIRES_IN` | Access token lifespan | `1h` |
+| `JWT_REFRESH_EXPIRES_IN` | Refresh token lifespan | `7d` |
+| `CLIENT_URL` | Allowed frontend origin for CORS | `https://arcshield.vercel.app` |
+| `RATE_LIMIT_MAX_REQUESTS` | Global API rate limit max requests | `100` |
+| `AUTH_RATE_LIMIT_MAX` | Auth endpoints rate limit max requests | `10` |
+
+### Frontend Environment Variables (`client/.env` / Vercel Dashboard)
+
+| Variable | Description | Example / Default |
+| :--- | :--- | :--- |
+| `VITE_API_URL` | Production Render backend API URL | `https://arcshield-api.onrender.com` |
+| `VITE_SOCKET_URL` | Production Socket.IO backend URL | `https://arcshield-api.onrender.com` |
+
+> **⚠️ SECURITY RULE**: Never put database credentials, Redis URLs, or JWT secrets in client environment variables.
+
+---
+
+## 🚀 Local Development Setup
+
+### 1. Prerequisites
+- Node.js (v18+)
+- npm (v9+)
+- *(Optional)* Local MongoDB & Redis, or use cloud connection strings.
+
+### 2. Backend Installation & Start
 ```bash
 cd server
 npm install
-node src/server.js
-# API listening at http://localhost:5000
+cp .env.example .env
+# Edit .env if connecting to live Atlas/Redis instances
+npm run dev
+# Server listening on http://localhost:5000
 ```
 
-#### Frontend Dashboard (React + Vite + Recharts + Tailwind):
+### 3. Frontend Installation & Start
 ```bash
 cd client
 npm install
+cp .env.example .env
 npm run dev -- --port 3000
-# Web Application accessible at http://localhost:3000
+# React App available at http://localhost:3000
+```
+
+---
+
+## 🚢 Production Deployment Guide
+
+### A. Deploy Backend to Render
+
+1. Create a new **Web Service** on [Render](https://render.com).
+2. Connect the repository: `https://github.com/ozlarts18-ops/ArcSheild.git`.
+3. Configure Service Settings:
+   - **Root Directory**: `server`
+   - **Environment**: `Node`
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+4. Add Environment Variables in the Render Dashboard:
+   - `NODE_ENV` = `production`
+   - `MONGODB_URI` = *(Your MongoDB Atlas connection URI)*
+   - `REDIS_URL` = *(Your Redis instance URI)*
+   - `JWT_SECRET` = *(Secure random string)*
+   - `JWT_REFRESH_SECRET` = *(Secure random string)*
+   - `CLIENT_URL` = `https://<your-vercel-app>.vercel.app`
+5. Click **Deploy**. Note your Render URL (e.g., `https://arcshield-api.onrender.com`).
+
+### B. Deploy Frontend to Vercel
+
+1. Create a new Project on [Vercel](https://vercel.com).
+2. Import the GitHub repository.
+3. Configure Project Settings:
+   - **Framework Preset**: `Vite`
+   - **Root Directory**: `client`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+4. Add Environment Variable in Vercel:
+   - `VITE_API_URL` = `https://arcshield-api.onrender.com`
+   - `VITE_SOCKET_URL` = `https://arcshield-api.onrender.com`
+5. Click **Deploy**.
+
+---
+
+## 🧪 Security & Quality Verification
+
+Run local test suites to verify auth, RBAC, input sanitization, and production builds:
+
+```bash
+# Test Frontend Production Build
+cd client
+npm run build
+
+# Verify Backend API & RBAC
+cd ../server
+node src/server.js
 ```

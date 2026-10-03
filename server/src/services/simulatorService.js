@@ -32,21 +32,32 @@ export class SimulatorService {
       // Realistic fluctuations
       if (r.temperature) {
         const drift = (Math.random() - 0.5) * 0.4;
-        r.temperature.thermocoupleMax6675 = +(r.temperature.thermocoupleMax6675 + drift).toFixed(1);
-        r.temperature.ambientDht22 = +(r.temperature.ambientDht22 + (Math.random() - 0.5) * 0.2).toFixed(1);
+        if (typeof r.temperature.thermocoupleMax6675 === 'number') {
+          r.temperature.thermocoupleMax6675 = +(r.temperature.thermocoupleMax6675 + drift).toFixed(1);
+        }
+        if (typeof r.temperature.ambientDht22 === 'number') {
+          r.temperature.ambientDht22 = +(r.temperature.ambientDht22 + (Math.random() - 0.5) * 0.2).toFixed(1);
+        }
+        if (typeof r.temperature.objectC === 'number') {
+          r.temperature.objectC = +(r.temperature.objectC + drift).toFixed(1);
+        }
       }
 
-      if (r.humidity) {
+      if (r.humidity && typeof r.humidity.dht22 === 'number') {
         r.humidity.dht22 = +(r.humidity.dht22 + (Math.random() - 0.5) * 0.3).toFixed(1);
+      } else if (r.humidity && typeof r.humidity.relativePercent === 'number') {
+        r.humidity.relativePercent = +(r.humidity.relativePercent + (Math.random() - 0.5) * 0.3).toFixed(1);
       }
 
-      if (r.lightLux && r.lightLux.lightState === 'NORMAL') {
+      if (r.lightLux && r.lightLux.lightState === 'NORMAL' && typeof r.lightLux.lux === 'number') {
         r.lightLux.lux = Math.round(r.lightLux.lux + (Math.random() - 0.5) * 40);
       }
 
       if (r.motion && r.motion.motionState === 'NORMAL') {
+        if (!r.motion.accel) r.motion.accel = { magnitudeG: 0.98 };
+        if (!r.motion.orientation) r.motion.orientation = { pitch: 0, roll: 0 };
         r.motion.accel.magnitudeG = +(0.98 + (Math.random() - 0.5) * 0.04).toFixed(2);
-        r.motion.orientation.pitch = +(r.motion.orientation.pitch + (Math.random() - 0.5) * 0.5).toFixed(1);
+        r.motion.orientation.pitch = +((r.motion.orientation.pitch || 0) + (Math.random() - 0.5) * 0.5).toFixed(1);
       }
 
       r.timestamp = new Date().toISOString();

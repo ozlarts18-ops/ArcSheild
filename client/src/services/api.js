@@ -1,121 +1,169 @@
-const API_BASE = 'http://localhost:5000/api';
+// Dynamic API base URL from Vite environment or local default
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
 
-// Auth
+/**
+ * Helper to get active JWT auth token from client storage
+ */
+function getAuthToken() {
+  try {
+    const raw = localStorage.getItem('arcsheild_auth');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed.token || null;
+    }
+  } catch (e) {
+    // Ignore parse error
+  }
+  return null;
+}
+
+/**
+ * Standardized secure fetch wrapper with auto-attached Bearer tokens
+ */
+async function secureFetch(endpoint, options = {}) {
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+  const token = getAuthToken();
+
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token && { Authorization: `Bearer ${token}` }),
+    ...options.headers
+  };
+
+  try {
+    const res = await fetch(url, { ...options, headers });
+    const data = await res.json().catch(() => ({ success: false, message: 'Invalid response format' }));
+
+    // If session expired, clean invalid token
+    if (res.status === 401 && data.code === 'TOKEN_EXPIRED') {
+      console.warn('[ArcShield] Auth session expired. Redirecting to login.');
+    }
+
+    return data;
+  } catch (error) {
+    console.error(`[API Network Error] ${url}:`, error.message);
+    return {
+      success: false,
+      message: 'Network connection failed. Please check server availability.'
+    };
+  }
+}
+
+// -------------------------------------------------------------
+// Authentication APIs
+// -------------------------------------------------------------
 export async function loginUserApi(email, password) {
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  return secureFetch('/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
-  return res.json();
 }
 
 export async function registerUserApi(data) {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  return secureFetch('/auth/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  return res.json();
 }
 
 export async function loginAdminApi(email, password) {
-  const res = await fetch(`${API_BASE}/auth/admin-login`, {
+  return secureFetch('/auth/admin-login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
-  return res.json();
 }
 
-// User Personal APIs
+export async function logoutApi() {
+  return secureFetch('/auth/logout', {
+    method: 'POST'
+  });
+}
+
+export async function fetchCurrentUserApi() {
+  return secureFetch('/auth/me');
+}
+
+// -------------------------------------------------------------
+// Normal User Personal APIs (/api/my/*)
+// -------------------------------------------------------------
 export async function fetchMySafetyApi() {
-  const res = await fetch(`${API_BASE}/my/safety`);
-  return res.json();
+  return secureFetch('/my/safety');
 }
 export const getMySafety = fetchMySafetyApi;
 
 export async function fetchMyAlertsApi() {
-  const res = await fetch(`${API_BASE}/my/alerts`);
-  return res.json();
+  return secureFetch('/my/alerts');
 }
 export const getMyAlerts = fetchMyAlertsApi;
 
 export async function fetchMyHistoryApi() {
-  const res = await fetch(`${API_BASE}/my/history`);
-  return res.json();
+  return secureFetch('/my/history');
 }
 export const getMyHistory = fetchMyHistoryApi;
 
 export async function fetchMyAnalyticsApi() {
-  const res = await fetch(`${API_BASE}/my/analytics`);
-  return res.json();
+  return secureFetch('/my/analytics');
 }
 export const getMyAnalytics = fetchMyAnalyticsApi;
 
-// Admin Organization APIs
+// -------------------------------------------------------------
+// Admin Organization APIs (/api/admin/*)
+// -------------------------------------------------------------
 export async function fetchAdminOverviewApi() {
-  const res = await fetch(`${API_BASE}/admin/overview`);
-  return res.json();
+  return secureFetch('/admin/overview');
 }
 export const getAdminOverview = fetchAdminOverviewApi;
 
 export async function fetchAdminHelmetsApi() {
-  const res = await fetch(`${API_BASE}/admin/helmets`);
-  return res.json();
+  return secureFetch('/admin/helmets');
 }
 export const getAdminHelmets = fetchAdminHelmetsApi;
 
 export async function fetchAdminUsersApi() {
-  const res = await fetch(`${API_BASE}/admin/users`);
-  return res.json();
+  return secureFetch('/admin/users');
 }
 export const getAdminUsers = fetchAdminUsersApi;
 
 export async function fetchAdminLiveApi() {
-  const res = await fetch(`${API_BASE}/admin/live`);
-  return res.json();
+  return secureFetch('/admin/live');
 }
 export const getAdminLive = fetchAdminLiveApi;
 
 export async function fetchAdminAlertsApi() {
-  const res = await fetch(`${API_BASE}/admin/alerts`);
-  return res.json();
+  return secureFetch('/admin/alerts');
 }
 export const getAdminAlerts = fetchAdminAlertsApi;
 
 export async function updateAdminAlertLifecycleApi(id, status, notes = '') {
-  const res = await fetch(`${API_BASE}/admin/alerts/${id}/lifecycle`, {
+  return secureFetch(`/admin/alerts/${id}/lifecycle`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status, notes })
   });
-  return res.json();
 }
 export const updateAlertLifecycle = updateAdminAlertLifecycleApi;
 
 export async function fetchAdminIncidentsApi() {
-  const res = await fetch(`${API_BASE}/admin/incidents`);
-  return res.json();
+  return secureFetch('/admin/incidents');
 }
 export const getAdminIncidents = fetchAdminIncidentsApi;
 
 export async function createAdminIncidentApi(payload) {
-  const res = await fetch(`${API_BASE}/admin/incidents`, {
+  return secureFetch('/admin/incidents', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  return res.json();
 }
 export const createAdminIncident = createAdminIncidentApi;
 
 export async function fetchAdminReportApi() {
-  const res = await fetch(`${API_BASE}/admin/reports/session-summary`);
-  return res.json();
+  return secureFetch('/admin/reports/session-summary');
 }
+
+export async function fetchAdminSystemStatusApi() {
+  return secureFetch('/admin/system/status');
+}
+
 export const getAdminAnalytics = async () => {
-  // Return aggregated metrics for admin
   const overview = await fetchAdminOverviewApi();
   return {
     ...overview,
