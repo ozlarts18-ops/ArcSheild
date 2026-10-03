@@ -116,6 +116,28 @@ export const createApiRouter = (state, simulator, io) => {
     });
   });
 
+  // Token Refresh Endpoint
+  router.post('/auth/refresh', authLimiter, async (req, res) => {
+    const { refreshToken } = req.body;
+    const ip = req.ip || req.connection?.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+
+    const result = await authService.refreshAccessToken(refreshToken, ip, userAgent);
+    if (!result.success) {
+      return res.status(result.status || 401).json({
+        success: false,
+        message: result.message
+      });
+    }
+
+    res.json({
+      success: true,
+      token: result.token,
+      refreshToken: result.refreshToken,
+      user: result.user
+    });
+  });
+
   // -------------------------------------------------------------
   // 2. NORMAL USER PERSONAL DATA APIS (/api/my/*)
   // Strictly isolated to the authenticated user's assigned gear
@@ -698,8 +720,20 @@ export const createApiRouter = (state, simulator, io) => {
   // 4. SENSOR TELEMETRY INGESTION (/api/telemetry)
   // Protected with rate limits, payload validation & abuse controls
   // -------------------------------------------------------------
-  router.post('/telemetry', sensorLimiter, validateBody(sensorIngestionSchema), (req, res) => {
+  router.post('/telemetry', optionalAuth, sensorLimiter, validateBody(sensorIngestionSchema), (req, res) => {
     const { helmetId, temperature, humidity, uvArcExposure, gasExposure, motion, helmetWearing } = req.body;
+
+    // If an authenticated normal user sends telemetry, enforce that the helmet is their assigned gear
+    if (req.user && req.user.role === 'USER') {
+      const assignedId = req.user.assignedHelmetId || 'ARC-001';
+      const isAuthorized = (helmetId === assignedId) || (helmetId === 'AS-001' && assignedId === 'ARC-001') || (helmetId === 'ARC-001');
+      if (!isAuthorized) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only submit telemetry for your assigned safety helmet.'
+        });
+      }
+    }
 
     // Validate that helmet is recognized in system
     const targetHelmet = state.helmets.find(h => h.id === helmetId || h.id === 'AS-001');

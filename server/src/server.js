@@ -48,12 +48,25 @@ app.use(helmet({
 const allowedOrigins = SECURITY_CONFIG.ALLOWED_ORIGINS;
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, server-to-server)
+    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server health checks)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.some(allowed => origin.startsWith(allowed) || allowed === '*')) {
+    
+    const isAllowed = allowedOrigins.some(allowed => 
+      origin === allowed || 
+      origin.startsWith(allowed) || 
+      (!SECURITY_CONFIG.IS_PRODUCTION && origin.includes('localhost'))
+    );
+
+    if (isAllowed) {
       return callback(null, true);
     }
-    return callback(null, true); // Permissive in dev, controlled via CLIENT_URL
+    
+    if (SECURITY_CONFIG.IS_PRODUCTION) {
+      console.warn(`[CORS] Blocked unauthorized origin: ${origin}`);
+      return callback(new Error(`CORS Error: Origin ${origin} not authorized by ArcShield security policy.`));
+    }
+
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
@@ -79,7 +92,7 @@ const state = {
 // 5. Secure Socket.IO Setup with Role-Based Room Isolation
 const io = new SocketIOServer(server, {
   cors: {
-    origin: '*',
+    origin: SECURITY_CONFIG.ALLOWED_ORIGINS.length > 0 ? SECURITY_CONFIG.ALLOWED_ORIGINS : '*',
     methods: ['GET', 'POST'],
     credentials: true
   }

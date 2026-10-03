@@ -1,10 +1,43 @@
 import dotenv from 'dotenv';
+import crypto from 'crypto';
+
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Safe dynamic fallback secrets generated with crypto if not provided in environment
+const fallbackJwtSecret = crypto.randomBytes(32).toString('hex');
+const fallbackRefreshSecret = crypto.randomBytes(32).toString('hex');
+
+if (isProduction && !process.env.JWT_SECRET) {
+  console.warn('[Security][WARNING] JWT_SECRET not provided in production environment. A secure runtime key was generated.');
+}
+
+const parseAllowedOrigins = () => {
+  const configured = process.env.CLIENT_URL;
+  const origins = [];
+
+  if (configured) {
+    configured.split(',').forEach(url => {
+      const trimmed = url.trim();
+      if (trimmed) origins.push(trimmed);
+    });
+  }
+
+  if (!isProduction) {
+    origins.push('http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173');
+  }
+
+  return [...new Set(origins)];
+};
+
 export const SECURITY_CONFIG = {
+  // Environment Flag
+  IS_PRODUCTION: isProduction,
+
   // JWT Configuration
-  JWT_SECRET: process.env.JWT_SECRET || 'arcshield_default_jwt_secret_change_in_production_key_982347',
-  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'arcshield_default_jwt_refresh_secret_key_849201',
+  JWT_SECRET: process.env.JWT_SECRET || fallbackJwtSecret,
+  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || fallbackRefreshSecret,
   ACCESS_TOKEN_EXPIRES: process.env.ACCESS_TOKEN_EXPIRES || '1h',
   REFRESH_TOKEN_EXPIRES: process.env.REFRESH_TOKEN_EXPIRES || '7d',
 
@@ -13,21 +46,19 @@ export const SECURITY_CONFIG = {
 
   // CORS Allowed Origins
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
-  ALLOWED_ORIGINS: [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:3000',
-    process.env.CLIENT_URL
-  ].filter(Boolean),
+  ALLOWED_ORIGINS: parseAllowedOrigins(),
 
   // Rate Limiting Defaults
-  AUTH_RATE_LIMIT_WINDOW_MS: 15 * 60 * 1000, // 15 minutes
-  AUTH_RATE_LIMIT_MAX: 10,                   // 10 attempts per 15 min
-  API_RATE_LIMIT_WINDOW_MS: 1 * 60 * 1000,   // 1 minute
-  API_RATE_LIMIT_MAX: 120,                   // 120 requests per min
-  SENSOR_RATE_LIMIT_MAX: 60,                 // 60 telemetry packets per min
+  AUTH_RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
+  AUTH_RATE_LIMIT_MAX: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '10', 10),            // 10 attempts per 15 min
+  API_RATE_LIMIT_WINDOW_MS: 15 * 60 * 1000,                                              // 15 minutes
+  API_RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),       // 100 requests per 15 min
+  SENSOR_RATE_LIMIT_MAX: 120,                                                            // 120 packets per min
+  REPORT_RATE_LIMIT_MAX: 20,                                                             // 20 requests per 15 min
 
   // Brute Force Lockout
   MAX_FAILED_LOGIN_ATTEMPTS: 5,
-  LOCKOUT_DURATION_SECONDS: 15 * 60,          // 15 minutes lock
+  LOCKOUT_DURATION_SECONDS: 15 * 60, // 15 minutes lock
 };
+
+export default SECURITY_CONFIG;

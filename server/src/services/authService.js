@@ -61,7 +61,7 @@ export const authService = {
         email: user.email,
         role: user.role,
         name: user.name,
-        assignedHelmetId: user.assignedHelmetId
+        assignedHelmetId: user.assignedHelmetId || 'ARC-001'
       },
       SECURITY_CONFIG.JWT_SECRET,
       { expiresIn: SECURITY_CONFIG.ACCESS_TOKEN_EXPIRES }
@@ -83,14 +83,14 @@ export const authService = {
   },
 
   /**
-   * Authenticate a Normal User
+   * Authenticate a normal worker
    */
-  async authenticateUser(email, password, ip, userAgent) {
-    const normalizedEmail = email.toLowerCase().trim();
+  async authenticateUser(email, password, ip = '127.0.0.1', userAgent = 'Unknown') {
+    const normalizedEmail = email ? email.toLowerCase().trim() : '';
 
-    // 1. Check Brute-force lockout
-    const lockoutStatus = await redisService.checkBruteForceLockout(ip, normalizedEmail);
-    if (lockoutStatus.locked) {
+    // 1. Check brute force throttle in Redis
+    const lockStatus = await redisService.checkBruteForceLockout(ip, normalizedEmail);
+    if (lockStatus.locked) {
       await auditLogger.logEvent({
         eventType: 'BRUTE_FORCE_BLOCKED',
         role: 'USER',
@@ -99,14 +99,18 @@ export const authService = {
         resource: '/api/auth/login',
         action: 'POST',
         success: false,
-        metadata: { email: normalizedEmail, attempts: lockoutStatus.attempts }
+        metadata: { email: normalizedEmail, attempts: lockStatus.attempts }
       });
 
       return {
         success: false,
         status: 429,
-        message: 'Too many authentication failures. Your account is temporarily locked for 15 minutes.'
+        message: lockStatus.message
       };
+    }
+
+    if (lockStatus.delayMs > 0) {
+      await new Promise(r => setTimeout(r, lockStatus.delayMs));
     }
 
     let user = null;
@@ -121,7 +125,7 @@ export const authService = {
     } else {
       user = inMemoryUsers.find(u => u.email === normalizedEmail && u.role === 'USER');
       if (user) {
-        isPasswordValid = (password === 'password123') || await bcrypt.compare(password, user.passwordHash).catch(() => false);
+        isPasswordValid = await bcrypt.compare(password, user.passwordHash).catch(() => false);
       }
     }
 
@@ -157,7 +161,7 @@ export const authService = {
       role: user.role,
       trade: user.trade,
       workshop: user.workshop,
-      assignedHelmetId: user.assignedHelmetId
+      assignedHelmetId: user.assignedHelmetId || 'ARC-001'
     };
 
     const token = this.generateAccessToken(safeUser);
@@ -183,19 +187,33 @@ export const authService = {
   },
 
   /**
-   * Authenticate an Admin User
+   * Authenticate an Admin / Safety Supervisor
    */
-  async authenticateAdmin(email, password, ip, userAgent) {
-    const normalizedEmail = email.toLowerCase().trim();
+  async authenticateAdmin(email, password, ip = '127.0.0.1', userAgent = 'Unknown') {
+    const normalizedEmail = email ? email.toLowerCase().trim() : '';
 
-    // 1. Check Brute-force lockout
-    const lockoutStatus = await redisService.checkBruteForceLockout(ip, normalizedEmail);
-    if (lockoutStatus.locked) {
+    const lockStatus = await redisService.checkBruteForceLockout(ip, normalizedEmail);
+    if (lockStatus.locked) {
+      await auditLogger.logEvent({
+        eventType: 'BRUTE_FORCE_BLOCKED',
+        role: 'ADMIN',
+        ipAddress: ip,
+        userAgent,
+        resource: '/api/auth/admin-login',
+        action: 'POST',
+        success: false,
+        metadata: { email: normalizedEmail, attempts: lockStatus.attempts }
+      });
+
       return {
         success: false,
         status: 429,
-        message: 'Too many administrative login failures. Please try again later.'
+        message: lockStatus.message
       };
+    }
+
+    if (lockStatus.delayMs > 0) {
+      await new Promise(r => setTimeout(r, lockStatus.delayMs));
     }
 
     let admin = null;
@@ -209,7 +227,7 @@ export const authService = {
     } else {
       admin = inMemoryUsers.find(u => u.email === normalizedEmail && u.role === 'ADMIN');
       if (admin) {
-        isPasswordValid = (password === 'admin123') || await bcrypt.compare(password, admin.passwordHash).catch(() => false);
+        isPasswordValid = await bcrypt.compare(password, admin.passwordHash).catch(() => false);
       }
     }
 
@@ -328,18 +346,112 @@ export const authService = {
         id: `USR-${Date.now().toString().slice(-4)}`,
         name: data.name,
         email: normalizedEmail,
-        passwordHash,
         role: 'USER',
         trade: data.trade || 'Welding',
         workshop: data.workshop || 'Welding Bay 01',
         assignedHelmetId: 'ARC-001'
       };
 
-      inMemoryUsers.push(safeUser);
+      // Store with password hash, return sanitized safeUser
+      inMemoryUsers.push({ ...safeUser, passwordHash });
       const token = this.generateAccessToken(safeUser);
       const refreshToken = this.generateRefreshToken(safeUser);
 
+      await auditLogger.logEvent({
+        eventType: 'USER_REGISTERED',
+        userId: safeUser.id,
+        role: 'USER',
+        ipAddress: ip,
+        userAgent,
+        resource: '/api/auth/register',
+        action: 'POST',
+        success: true
+      });
+
       return { success: true, token, refreshToken, user: safeUser };
+    }
+  },
+
+  /**
+   * Exchange a valid Refresh Token for a new Access Token
+   */
+  async refreshAccessToken(refreshToken, ip = '127.0.0.1', userAgent = 'Unknown') {
+    if (!refreshToken) {
+      return {
+        success: false,
+        status: 400,
+        message: 'Refresh token is required.'
+      };
+    }
+
+    try {
+      // Check if refresh token was invalidated
+      const isBlacklisted = await redisService.isTokenBlacklisted(refreshToken);
+      if (isBlacklisted) {
+        return {
+          success: false,
+          status: 401,
+          message: 'Refresh token has been revoked.'
+        };
+      }
+
+      // Verify token cryptographic signature
+      const decoded = jwt.verify(refreshToken, SECURITY_CONFIG.JWT_REFRESH_SECRET);
+
+      let user = null;
+      if (mongoose.connection.readyState === 1) {
+        user = await User.findOne({ userId: decoded.id });
+      } else {
+        user = inMemoryUsers.find(u => u.id === decoded.id);
+      }
+
+      if (!user) {
+        return {
+          success: false,
+          status: 401,
+          message: 'User session no longer exists.'
+        };
+      }
+
+      const safeUser = user.toSafeObject ? user.toSafeObject() : {
+        id: user.id || user.userId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        trade: user.trade,
+        workshop: user.workshop,
+        assignedHelmetId: user.assignedHelmetId || 'ARC-001'
+      };
+
+      const newAccessToken = this.generateAccessToken(safeUser);
+      const newRefreshToken = this.generateRefreshToken(safeUser);
+
+      // Invalidate the old refresh token
+      await redisService.blacklistToken(refreshToken, 7 * 24 * 3600);
+
+      await auditLogger.logEvent({
+        eventType: 'TOKEN_REFRESHED',
+        userId: safeUser.id,
+        role: safeUser.role,
+        ipAddress: ip,
+        userAgent,
+        resource: '/api/auth/refresh',
+        action: 'POST',
+        success: true
+      });
+
+      return {
+        success: true,
+        token: newAccessToken,
+        refreshToken: newRefreshToken,
+        user: safeUser
+      };
+    } catch (err) {
+      return {
+        success: false,
+        status: 401,
+        message: 'Invalid or expired refresh token.'
+      };
     }
   }
 };

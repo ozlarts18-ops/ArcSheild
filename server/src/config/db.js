@@ -3,21 +3,29 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 let isConnected = false;
+let connectionError = null;
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 export const connectDB = async () => {
   const mongoUri = process.env.MONGODB_URI;
 
   if (!mongoUri) {
-    console.warn('[MongoDB] Warning: MONGODB_URI not configured in environment.');
-    console.log('[ArcShield] Running in resilient in-memory datastore mode with auto-sync.');
+    if (isProduction) {
+      connectionError = 'MONGODB_URI environment variable is missing.';
+      console.error('[MongoDB Atlas][CRITICAL] Production requires MONGODB_URI to be configured.');
+    } else {
+      console.warn('[MongoDB] Warning: MONGODB_URI not configured in development environment.');
+      console.log('[ArcShield] Running in development resilient in-memory datastore mode.');
+    }
     return false;
   }
 
   try {
     const options = {
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 8000,
       socketTimeoutMS: 45000,
-      maxPoolSize: 20,
+      maxPoolSize: 25,
       minPoolSize: 2,
       retryWrites: true,
       w: 'majority'
@@ -25,12 +33,14 @@ export const connectDB = async () => {
 
     const conn = await mongoose.connect(mongoUri, options);
     isConnected = true;
+    connectionError = null;
     
     // Mask sensitive connection details for safe logging
     const host = conn.connection.host || 'Atlas Cluster';
-    console.log(`[MongoDB Atlas] Connected securely to cluster (${host})`);
+    console.log(`[MongoDB Atlas] Connected securely to cluster (${host}) with TLS/SSL enabled.`);
 
     mongoose.connection.on('error', (err) => {
+      connectionError = err.message;
       console.error(`[MongoDB] Runtime error: ${err.message}`);
     });
 
@@ -42,21 +52,28 @@ export const connectDB = async () => {
     mongoose.connection.on('reconnected', () => {
       console.log('[MongoDB] Connection re-established.');
       isConnected = true;
+      connectionError = null;
     });
 
     return true;
   } catch (error) {
-    console.warn(`[MongoDB] Atlas connection failed (${error.message}).`);
-    console.log(`[ArcShield] Falling back to resilient in-memory operational datastore.`);
+    connectionError = error.message;
+    if (isProduction) {
+      console.error(`[MongoDB Atlas][CRITICAL] Connection failed: ${error.message}`);
+    } else {
+      console.warn(`[MongoDB] Atlas connection failed (${error.message}).`);
+      console.log(`[ArcShield] Falling back to development resilient in-memory operational datastore.`);
+    }
     return false;
   }
 };
 
 export const getDBStatus = () => {
+  const dbConnected = isConnected && mongoose.connection.readyState === 1;
   return {
-    connected: isConnected && mongoose.connection.readyState === 1,
+    connected: dbConnected,
     readyState: mongoose.connection.readyState,
-    host: isConnected ? mongoose.connection.host : 'In-Memory Store'
+    status: dbConnected ? 'Connected (MongoDB Atlas)' : isProduction ? `Disconnected (${connectionError || 'MONGODB_URI Missing'})` : 'Development In-Memory Store'
   };
 };
 

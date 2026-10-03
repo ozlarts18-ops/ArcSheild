@@ -4,8 +4,11 @@ dotenv.config();
 
 let redisClient = null;
 let isRedisConnected = false;
+let redisErrorMessage = null;
 
-// Fallback in-memory store for local environments without Redis
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Fallback in-memory store for local development environments without Redis
 class InMemoryFallbackStore {
   constructor() {
     this.store = new Map();
@@ -64,7 +67,13 @@ export const initRedis = () => {
   const redisUrl = process.env.REDIS_URL;
 
   if (!redisUrl) {
-    console.log('[Redis] Notice: REDIS_URL not specified. Using resilient in-memory state engine.');
+    if (isProduction) {
+      redisErrorMessage = 'REDIS_URL is not configured in production environment.';
+      console.error(`[Redis][CRITICAL] ${redisErrorMessage}`);
+      console.error('[Redis] Distributed rate limiting and multi-instance session blacklist require Redis in production.');
+    } else {
+      console.log('[Redis] Notice: REDIS_URL not specified in development. Using in-memory state engine.');
+    }
     return fallbackStore;
   }
 
@@ -74,7 +83,8 @@ export const initRedis = () => {
       maxRetriesPerRequest: 2,
       retryStrategy(times) {
         if (times > 3) {
-          console.warn('[Redis] Max reconnection attempts reached. Switching to in-memory fallback.');
+          redisErrorMessage = 'Max reconnection attempts reached.';
+          console.warn(`[Redis] ${redisErrorMessage}`);
           return null; // Stop retrying
         }
         return Math.min(times * 1000, 3000);
@@ -85,26 +95,35 @@ export const initRedis = () => {
 
     redisClient.connect().then(() => {
       isRedisConnected = true;
+      redisErrorMessage = null;
       console.log('[Redis] Connected securely to Redis distributed state store.');
     }).catch(err => {
       isRedisConnected = false;
-      console.warn(`[Redis] Connection failed (${err.message}). Using in-memory fallback.`);
+      redisErrorMessage = err.message;
+      if (isProduction) {
+        console.error(`[Redis][CRITICAL] Production connection failed (${err.message}).`);
+      } else {
+        console.warn(`[Redis] Connection failed (${err.message}). Using development in-memory fallback.`);
+      }
     });
 
     redisClient.on('error', (err) => {
+      redisErrorMessage = err.message;
       if (isRedisConnected) {
-        console.warn(`[Redis] Runtime warning: ${err.message}`);
+        console.warn(`[Redis] Runtime error: ${err.message}`);
       }
       isRedisConnected = false;
     });
 
     redisClient.on('connect', () => {
       isRedisConnected = true;
+      redisErrorMessage = null;
     });
 
     return redisClient;
   } catch (error) {
-    console.warn(`[Redis] Init error (${error.message}). Using in-memory fallback.`);
+    redisErrorMessage = error.message;
+    console.error(`[Redis] Init error (${error.message}).`);
     return fallbackStore;
   }
 };
@@ -117,9 +136,23 @@ export const getRedisClient = () => {
 };
 
 export const getRedisStatus = () => {
+  if (isRedisConnected) {
+    return {
+      connected: true,
+      mode: 'Distributed Redis (Active)'
+    };
+  }
+
+  if (isProduction) {
+    return {
+      connected: false,
+      mode: `Unavailable (${redisErrorMessage || 'REDIS_URL not configured'})`
+    };
+  }
+
   return {
-    connected: isRedisConnected,
-    mode: isRedisConnected ? 'Distributed Redis' : 'In-Memory Resilient Engine'
+    connected: false,
+    mode: 'Development In-Memory State Engine'
   };
 };
 
