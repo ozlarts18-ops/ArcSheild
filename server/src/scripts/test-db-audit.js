@@ -55,9 +55,11 @@ async function auditDatabase() {
     });
   }
 
+  const API_URL = (process.env.SERVER_URL || 'https://arcsheild.onrender.com').replace(/\/$/, '');
+
   // 3. Test API Auth against Atlas DB
   console.log('\n[3] Testing User Authentication & Token Generation:');
-  const loginRes = await fetch('http://localhost:5000/api/auth/login', {
+  const loginRes = await fetch(`${API_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -71,7 +73,7 @@ async function auditDatabase() {
 
   // 4. Test User Data Isolation API
   console.log('\n[4] Testing User Data Isolation (/api/my/alerts):');
-  const myAlertsRes = await fetch('http://localhost:5000/api/my/alerts', {
+  const myAlertsRes = await fetch(`${API_URL}/api/my/alerts`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   const myAlertsData = await myAlertsRes.json();
@@ -79,7 +81,7 @@ async function auditDatabase() {
 
   // 5. Test Admin Auth & Fleet Inventory
   console.log('\n[5] Testing Admin Authentication & Fleet Queries:');
-  const adminLoginRes = await fetch('http://localhost:5000/api/auth/admin-login', {
+  const adminLoginRes = await fetch(`${API_URL}/api/auth/admin-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -91,13 +93,13 @@ async function auditDatabase() {
   const adminToken = adminLoginData?.token;
   console.log(`Admin Login Status: ${adminLoginRes.status}, Admin Token Received: ${Boolean(adminToken)}`);
 
-  const adminHelmetsRes = await fetch('http://localhost:5000/api/admin/helmets', {
+  const adminHelmetsRes = await fetch(`${API_URL}/api/admin/helmets`, {
     headers: { 'Authorization': `Bearer ${adminToken}` }
   });
   const adminHelmetsData = await adminHelmetsRes.json();
   console.log(`Admin Helmets Status: ${adminHelmetsRes.status}, Helmets Count: ${adminHelmetsData?.helmets?.length}`);
 
-  const adminUsersRes = await fetch('http://localhost:5000/api/admin/users', {
+  const adminUsersRes = await fetch(`${API_URL}/api/admin/users`, {
     headers: { 'Authorization': `Bearer ${adminToken}` }
   });
   const adminUsersData = await adminUsersRes.json();
@@ -106,7 +108,7 @@ async function auditDatabase() {
   // 6. Test Telemetry Ingestion & MongoDB Persistence
   console.log('\n[6] Testing Telemetry Ingestion & Persistence in sensorReadings:');
   const beforeReadingsCount = await SensorReading.countDocuments();
-  const telemetryRes = await fetch('http://localhost:5000/api/telemetry', {
+  const telemetryRes = await fetch(`${API_URL}/api/telemetry`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
