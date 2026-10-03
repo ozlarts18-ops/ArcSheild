@@ -50,8 +50,22 @@ export function ArcShieldProvider({ children }) {
   useEffect(() => {
     loadState();
 
-    const socket = io('http://localhost:5000', {
-      transports: ['websocket', 'polling']
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 
+      (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : 'http://localhost:5000');
+
+    let token = null;
+    try {
+      const savedAuth = localStorage.getItem('arcsheild_auth');
+      if (savedAuth) {
+        token = JSON.parse(savedAuth).token;
+      }
+    } catch (e) {
+      // Ignore parse error
+    }
+
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      auth: { token: token ? `Bearer ${token}` : undefined }
     });
 
     socket.on('connect', () => {

@@ -1,5 +1,6 @@
-// Dynamic API base URL from Vite environment or local default
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+// Dynamic API base URL from Vite environment with automatic /api routing normalization
+const rawApi = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+const API_BASE = rawApi.endsWith('/api') ? rawApi : `${rawApi}/api`;
 
 /**
  * Helper to get active JWT auth token from client storage
