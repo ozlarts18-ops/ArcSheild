@@ -59,6 +59,14 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />
 
+          {/* Direct Route Aliases for User Dashboard */}
+          <Route path="/live-monitoring" element={<Navigate to="/dashboard/live" replace />} />
+          <Route path="/alerts" element={<Navigate to="/dashboard/alerts" replace />} />
+          <Route path="/safety-history" element={<Navigate to="/dashboard/history" replace />} />
+          <Route path="/analytics" element={<Navigate to="/dashboard/analytics" replace />} />
+          <Route path="/reports" element={<Navigate to="/dashboard/reports" replace />} />
+          <Route path="/profile" element={<Navigate to="/dashboard/profile" replace />} />
+
           {/* Normal User Dashboard Experience ("My Safety" - 1 User + 1 Helmet) */}
           <Route
             path="/dashboard"

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import {
+  SOCKET_URL,
   fetchFullState,
   updateAlertLifecycleApi,
   createIncidentApi,
@@ -50,8 +51,7 @@ export function ArcShieldProvider({ children }) {
   useEffect(() => {
     loadState();
 
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 
-      (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : 'http://localhost:5000');
+    const socketUrl = SOCKET_URL;
 
     let token = null;
     try {

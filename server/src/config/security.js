@@ -1,6 +1,12 @@
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -19,10 +25,13 @@ const parseAllowedOrigins = () => {
 
   if (configured) {
     configured.split(',').forEach(url => {
-      const trimmed = url.trim();
+      const trimmed = url.trim().replace(/\/$/, '');
       if (trimmed) origins.push(trimmed);
     });
   }
+
+  // Always strictly authorize production Vercel frontend
+  origins.push('https://arc-sheild.vercel.app');
 
   if (!isProduction) {
     origins.push('http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173');

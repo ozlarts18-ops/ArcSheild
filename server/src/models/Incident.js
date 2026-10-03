@@ -52,8 +52,13 @@ const incidentSchema = new mongoose.Schema({
     default: 'Supervisor Desk'
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'incidents'
 });
+
+incidentSchema.index({ affectedUserId: 1, createdAt: -1 });
+incidentSchema.index({ helmetId: 1, createdAt: -1 });
+incidentSchema.index({ type: 1, status: 1 });
 
 export const Incident = mongoose.models.Incident || mongoose.model('Incident', incidentSchema);
 export default Incident;

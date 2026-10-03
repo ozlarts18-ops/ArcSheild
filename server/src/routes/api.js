@@ -14,6 +14,14 @@ import {
   alertLifecycleSchema, 
   createIncidentSchema 
 } from '../validation/schemas.js';
+import mongoose from 'mongoose';
+import { User } from '../models/User.js';
+import { Helmet } from '../models/Helmet.js';
+import { Alert } from '../models/Alert.js';
+import { Incident } from '../models/Incident.js';
+import { SensorReading } from '../models/SensorReading.js';
+import { Session } from '../models/Session.js';
+import { SecurityEvent } from '../models/SecurityEvent.js';
 import { getDBStatus } from '../config/db.js';
 import { getRedisStatus } from '../config/redis.js';
 
@@ -215,28 +223,54 @@ export const createApiRouter = (state, simulator, io) => {
   });
 
   // User's Own Alerts Only
-  router.get('/my/alerts', authenticateJwt, apiLimiter, (req, res) => {
-    const myAlerts = state.alerts.filter(a => 
-      a.helmetId === 'AS-001' || 
-      a.helmetId === req.user?.assignedHelmetId ||
-      a.workerName?.includes('Rahul') ||
-      a.workerName === req.user?.name
-    ).map(a => ({
-      id: a.id,
-      type: a.type,
-      severity: a.severity,
-      message: a.message,
-      status: a.lifecycleStatus || 'RESOLVED',
-      timestamp: a.timestamp,
-      helmetId: 'ARC-001'
-    }));
+  router.get('/my/alerts', authenticateJwt, apiLimiter, async (req, res) => {
+    try {
+      const isDb = mongoose.connection.readyState === 1;
+      let myAlerts = [];
 
-    res.json({ 
-      success: true, 
-      count: myAlerts.length, 
-      alerts: myAlerts,
-      data: { alerts: myAlerts } 
-    });
+      if (isDb) {
+        const dbAlerts = await Alert.find({
+          $or: [
+            { userId: req.user?.id },
+            { helmetId: req.user?.assignedHelmetId || 'ARC-001' }
+          ]
+        }).sort({ createdAt: -1 }).lean();
+
+        myAlerts = dbAlerts.map(a => ({
+          id: a.alertId || a._id.toString(),
+          type: a.type,
+          severity: a.severity,
+          message: a.message,
+          status: a.status || 'ACTIVE',
+          timestamp: a.createdAt || a.timestamp || new Date().toISOString(),
+          helmetId: a.helmetId || 'ARC-001'
+        }));
+      } else {
+        myAlerts = state.alerts.filter(a => 
+          a.helmetId === 'AS-001' || 
+          a.helmetId === req.user?.assignedHelmetId ||
+          a.workerName?.includes('Rahul') ||
+          a.workerName === req.user?.name
+        ).map(a => ({
+          id: a.id,
+          type: a.type,
+          severity: a.severity,
+          message: a.message,
+          status: a.lifecycleStatus || 'RESOLVED',
+          timestamp: a.timestamp,
+          helmetId: 'ARC-001'
+        }));
+      }
+
+      res.json({ 
+        success: true, 
+        count: myAlerts.length, 
+        alerts: myAlerts,
+        data: { alerts: myAlerts } 
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // User's Own Safety History Log
@@ -523,39 +557,85 @@ export const createApiRouter = (state, simulator, io) => {
   });
 
   // Admin Helmets Fleet Inventory
-  router.get('/admin/helmets', authenticateJwt, requireAdmin, apiLimiter, (req, res) => {
-    const helmets = state.helmets.map(h => ({
-      helmetId: h.id,
-      assignedUser: h.assignedWorker?.name || 'Unassigned',
-      trade: h.assignedWorker?.trade || 'Welding',
-      workshop: h.assignedWorker?.zone || 'Main Workshop',
-      zone: 'Zone A',
-      safetyState: h.safetyState,
-      connection: h.connectionStatus === 'ONLINE' ? 'Online' : 'Offline',
-      lastSeen: new Date().toISOString(),
-      activeAlerts: state.alerts.filter(a => a.helmetId === h.id && a.lifecycleStatus === 'ACTIVE').length
-    }));
+  router.get('/admin/helmets', authenticateJwt, requireAdmin, apiLimiter, async (req, res) => {
+    try {
+      const isDb = mongoose.connection.readyState === 1;
+      let helmets = [];
+      if (isDb) {
+        const dbHelmets = await Helmet.find().sort({ helmetId: 1 }).lean();
+        const dbAlerts = await Alert.find({ status: 'ACTIVE' }).lean();
+        helmets = dbHelmets.map(h => ({
+          helmetId: h.helmetId,
+          assignedUser: h.assignedUserName || 'Unassigned',
+          trade: h.trade || 'Welding',
+          workshop: h.workshop || 'Main Workshop',
+          zone: h.zone || 'Zone A',
+          safetyState: h.safetyState || 'SAFE',
+          connection: h.connectionStatus === 'ONLINE' ? 'Online' : 'Offline',
+          lastSeen: h.lastSeen || new Date().toISOString(),
+          activeAlerts: dbAlerts.filter(a => a.helmetId === h.helmetId).length
+        }));
+      } else {
+        helmets = state.helmets.map(h => ({
+          helmetId: h.id,
+          assignedUser: h.assignedWorker?.name || 'Unassigned',
+          trade: h.assignedWorker?.trade || 'Welding',
+          workshop: h.assignedWorker?.zone || 'Main Workshop',
+          zone: 'Zone A',
+          safetyState: h.safetyState,
+          connection: h.connectionStatus === 'ONLINE' ? 'Online' : 'Offline',
+          lastSeen: new Date().toISOString(),
+          activeAlerts: state.alerts.filter(a => a.helmetId === h.id && a.lifecycleStatus === 'ACTIVE').length
+        }));
+      }
 
-    res.json({ success: true, helmets, data: { helmets } });
+      res.json({ success: true, helmets, data: { helmets } });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // Admin Users / Trainees Directory
-  router.get('/admin/users', authenticateJwt, requireAdmin, apiLimiter, (req, res) => {
-    const users = state.workers.map(w => {
-      const helmet = state.helmets.find(h => h.assignedWorker?.id === w.id);
-      return {
-        id: w.id,
-        name: w.name,
-        email: w.email || `${w.name.toLowerCase().replace(' ', '.')}@iti.edu`,
-        trade: w.trade,
-        assignedHelmet: helmet ? helmet.id : 'ARC-001',
-        workshop: w.zone || 'Welding Bay 01',
-        currentSafety: helmet ? helmet.safetyState : 'SAFE',
-        connection: 'Online'
-      };
-    });
+  router.get('/admin/users', authenticateJwt, requireAdmin, apiLimiter, async (req, res) => {
+    try {
+      const isDb = mongoose.connection.readyState === 1;
+      let users = [];
+      if (isDb) {
+        const dbUsers = await User.find({ role: 'USER' }).lean();
+        const dbHelmets = await Helmet.find().lean();
+        users = dbUsers.map(u => {
+          const helmet = dbHelmets.find(h => h.assignedUserId === u.userId || h.helmetId === u.assignedHelmetId);
+          return {
+            id: u.userId,
+            name: u.name,
+            email: u.email,
+            trade: u.trade,
+            assignedHelmet: u.assignedHelmetId || 'ARC-001',
+            workshop: u.workshop || 'Welding Bay 01',
+            currentSafety: helmet ? helmet.safetyState : 'SAFE',
+            connection: helmet?.connectionStatus === 'ONLINE' ? 'Online' : 'Offline'
+          };
+        });
+      } else {
+        users = state.workers.map(w => {
+          const helmet = state.helmets.find(h => h.assignedWorker?.id === w.id);
+          return {
+            id: w.id,
+            name: w.name,
+            email: w.email || `${w.name.toLowerCase().replace(' ', '.')}@iti.edu`,
+            trade: w.trade,
+            assignedHelmet: helmet ? helmet.id : 'ARC-001',
+            workshop: w.zone || 'Welding Bay 01',
+            currentSafety: helmet ? helmet.safetyState : 'SAFE',
+            connection: 'Online'
+          };
+        });
+      }
 
-    res.json({ success: true, users, data: { users } });
+      res.json({ success: true, users, data: { users } });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // Admin Live Multi-Helmet Matrix
@@ -588,25 +668,58 @@ export const createApiRouter = (state, simulator, io) => {
   });
 
   // Admin All Alerts Dispatcher
-  router.get('/admin/alerts', authenticateJwt, requireAdmin, apiLimiter, (req, res) => {
-    const alerts = state.alerts.map(a => ({
-      id: a.id,
-      severity: a.severity,
-      type: a.type,
-      message: a.message,
-      userName: a.workerName || 'Rahul Sharma',
-      helmetId: a.helmetId || 'ARC-001',
-      timestamp: a.timestamp,
-      status: a.lifecycleStatus || 'ACTIVE'
-    }));
+  router.get('/admin/alerts', authenticateJwt, requireAdmin, apiLimiter, async (req, res) => {
+    try {
+      const isDb = mongoose.connection.readyState === 1;
+      let alerts = [];
+      if (isDb) {
+        const dbAlerts = await Alert.find().sort({ createdAt: -1 }).lean();
+        alerts = dbAlerts.map(a => ({
+          id: a.alertId || a._id.toString(),
+          severity: a.severity,
+          type: a.type,
+          message: a.message,
+          userName: a.userName || 'Rahul Sharma',
+          helmetId: a.helmetId || 'ARC-001',
+          timestamp: a.createdAt || a.timestamp || new Date().toISOString(),
+          status: a.status || 'ACTIVE'
+        }));
+      } else {
+        alerts = state.alerts.map(a => ({
+          id: a.id,
+          severity: a.severity,
+          type: a.type,
+          message: a.message,
+          userName: a.workerName || 'Rahul Sharma',
+          helmetId: a.helmetId || 'ARC-001',
+          timestamp: a.timestamp,
+          status: a.lifecycleStatus || 'ACTIVE'
+        }));
+      }
 
-    res.json({ success: true, alerts, data: { alerts } });
+      res.json({ success: true, alerts, data: { alerts } });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // Admin Update Alert Lifecycle (Acknowledge / Resolve)
   router.patch('/admin/alerts/:id/lifecycle', authenticateJwt, requireAdmin, validateBody(alertLifecycleSchema), async (req, res) => {
     const { id } = req.params;
     const { status, notes } = req.body;
+
+    const isDb = mongoose.connection.readyState === 1;
+    if (isDb) {
+      await Alert.findOneAndUpdate(
+        { alertId: id },
+        {
+          status,
+          ...(notes && { notes }),
+          ...(status === 'RESOLVED' && { resolvedAt: new Date() }),
+          ...(status === 'ACKNOWLEDGED' && { acknowledgedAt: new Date() })
+        }
+      ).catch(() => {});
+    }
 
     const alert = state.alerts.find(a => a.id === id);
     if (alert) {
@@ -634,26 +747,65 @@ export const createApiRouter = (state, simulator, io) => {
   });
 
   // Admin Incidents Register
-  router.get('/admin/incidents', authenticateJwt, requireAdmin, apiLimiter, (req, res) => {
-    const incidents = state.incidents.map(i => ({
-      id: i.id,
-      type: i.type,
-      title: i.title,
-      description: i.description,
-      affectedUser: i.affectedWorker?.name || 'Rahul Sharma',
-      helmetId: i.helmetId || 'ARC-001',
-      workshop: i.zone || 'Welding Bay 01',
-      timestamp: i.timestamp,
-      actionTaken: i.correctiveAction || ''
-    }));
+  router.get('/admin/incidents', authenticateJwt, requireAdmin, apiLimiter, async (req, res) => {
+    try {
+      const isDb = mongoose.connection.readyState === 1;
+      let incidents = [];
+      if (isDb) {
+        const dbIncidents = await Incident.find().sort({ createdAt: -1 }).lean();
+        incidents = dbIncidents.map(i => ({
+          id: i.incidentId || i._id.toString(),
+          type: i.type,
+          title: i.title,
+          description: i.description,
+          affectedUser: i.affectedUserName || 'Rahul Sharma',
+          helmetId: i.helmetId || 'ARC-001',
+          workshop: i.workshop || 'Welding Bay 01',
+          timestamp: i.createdAt || i.timestamp || new Date().toISOString(),
+          actionTaken: i.actionTaken || ''
+        }));
+      } else {
+        incidents = state.incidents.map(i => ({
+          id: i.id,
+          type: i.type,
+          title: i.title,
+          description: i.description,
+          affectedUser: i.affectedWorker?.name || 'Rahul Sharma',
+          helmetId: i.helmetId || 'ARC-001',
+          workshop: i.zone || 'Welding Bay 01',
+          timestamp: i.timestamp,
+          actionTaken: i.correctiveAction || ''
+        }));
+      }
 
-    res.json({ success: true, incidents, data: { incidents } });
+      res.json({ success: true, incidents, data: { incidents } });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // Admin Log Safety Incident / Near Miss
   router.post('/admin/incidents', authenticateJwt, requireAdmin, validateBody(createIncidentSchema), async (req, res) => {
+    const incId = `INC-${Date.now().toString().slice(-4)}`;
+    const isDb = mongoose.connection.readyState === 1;
+    if (isDb) {
+      await Incident.create({
+        incidentId: incId,
+        type: req.body.type,
+        title: req.body.title,
+        description: req.body.description,
+        affectedUserId: req.body.affectedUserId || 'USR-101',
+        affectedUserName: req.body.affectedUser,
+        helmetId: req.body.helmetId,
+        workshop: req.body.workshop,
+        status: 'RESOLVED',
+        actionTaken: req.body.actionTaken,
+        loggedBy: req.user?.name || 'Supervisor Desk'
+      }).catch(err => console.warn('[Incident Create Error]', err.message));
+    }
+
     const newInc = {
-      id: `INC-${Date.now().toString().slice(-4)}`,
+      id: incId,
       type: req.body.type,
       title: req.body.title,
       description: req.body.description,
@@ -742,6 +894,21 @@ export const createApiRouter = (state, simulator, io) => {
         success: false,
         message: 'Unrecognized helmet hardware identifier.'
       });
+    }
+
+    // Persist into MongoDB Atlas if connected
+    if (mongoose.connection.readyState === 1) {
+      SensorReading.create({
+        helmetId,
+        userId: req.user?.id || null,
+        temperature: temperature && { objectC: temperature.current, ambientC: temperature.ambient ?? 30.0 },
+        humidity: humidity && { relativePercent: humidity.current },
+        uvArcExposure: uvArcExposure && { status: uvArcExposure.level || 'NORMAL' },
+        gasExposure: gasExposure && { overallStatus: gasExposure.level || 'NORMAL' },
+        motion: motion && { motionState: motion.movement || 'NORMAL' },
+        helmetWearing: helmetWearing && { helmetWorn: helmetWearing.isWorn ?? true },
+        safetyState: targetHelmet?.safetyState || 'SAFE'
+      }).catch(err => console.warn('[Telemetry Persistence Notice]', err.message));
     }
 
     // Update in-memory telemetry state

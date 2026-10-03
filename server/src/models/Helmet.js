@@ -43,8 +43,12 @@ const helmetSchema = new mongoose.Schema({
     default: Date.now
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'helmets'
 });
+
+helmetSchema.index({ connectionStatus: 1, safetyState: 1 });
+helmetSchema.index({ assignedUserId: 1, lastSeen: -1 });
 
 export const Helmet = mongoose.models.Helmet || mongoose.model('Helmet', helmetSchema);
 export default Helmet;

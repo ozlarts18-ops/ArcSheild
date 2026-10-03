@@ -82,31 +82,26 @@ The platform ingests real-time safety telemetry from connected smart PPE helmets
 
 ## ⚙️ Environment Configuration
 
-### Backend Environment Variables (`server/.env` / Render Dashboard)
+ArcShield uses a **centralized root `.env`** for local development. Production environment variables are configured separately in Render and Vercel.
 
-| Variable | Description | Example / Default |
-| :--- | :--- | :--- |
-| `NODE_ENV` | Environment mode | `production` |
-| `PORT` | Web service listening port | `5000` |
-| `MONGODB_URI` | MongoDB Atlas TLS connection string | `mongodb+srv://<user>:<password>@cluster0.mongodb.net/arcshield?retryWrites=true&w=majority` |
-| `MONGODB_DB_NAME` | Database name | `arcshield` |
-| `REDIS_URL` | Redis connection URI | `rediss://default:<password>@<redis-host>:6379` |
-| `JWT_SECRET` | Cryptographic secret for Access Tokens | *(Generate with `openssl rand -base64 48`)* |
-| `JWT_REFRESH_SECRET` | Cryptographic secret for Refresh Tokens | *(Generate with `openssl rand -base64 48`)* |
-| `JWT_EXPIRES_IN` | Access token lifespan | `1h` |
-| `JWT_REFRESH_EXPIRES_IN` | Refresh token lifespan | `7d` |
-| `CLIENT_URL` | Allowed frontend origin for CORS | `https://arcshield.vercel.app` |
-| `RATE_LIMIT_MAX_REQUESTS` | Global API rate limit max requests | `100` |
-| `AUTH_RATE_LIMIT_MAX` | Auth endpoints rate limit max requests | `10` |
+### Centralized Root Environment Variables (`.env` / `.env.example`)
 
-### Frontend Environment Variables (`client/.env` / Vercel Dashboard)
+| Variable | Scope | Description | Example / Default |
+| :--- | :--- | :--- | :--- |
+| `NODE_ENV` | Backend | Environment mode | `development` |
+| `PORT` | Backend | Web service listening port | `5000` |
+| `MONGODB_URI` | Backend | MongoDB Atlas TLS connection string | `mongodb+srv://<user>:<password>@cluster0.mongodb.net/arcshield?retryWrites=true&w=majority` |
+| `MONGODB_DB_NAME` | Backend | Database name | `arcshield` |
+| `REDIS_URL` | Backend | Redis connection URI | `rediss://default:<password>@<redis-host>:6379` |
+| `JWT_SECRET` | Backend | Cryptographic secret for Access Tokens | *(Generate with `openssl rand -base64 48`)* |
+| `JWT_REFRESH_SECRET` | Backend | Cryptographic secret for Refresh Tokens | *(Generate with `openssl rand -base64 48`)* |
+| `CLIENT_URL` | Backend | Allowed frontend origin for CORS | `http://localhost:5173` |
+| `RATE_LIMIT_MAX_REQUESTS` | Backend | Global API rate limit max requests | `100` |
+| `AUTH_RATE_LIMIT_MAX` | Backend | Auth endpoints rate limit max requests | `10` |
+| `VITE_API_URL` | Frontend | Backend API base URL | `http://localhost:5000/api` |
+| `VITE_SOCKET_URL` | Frontend | Socket.IO backend connection URL | `http://localhost:5000` |
 
-| Variable | Description | Example / Default |
-| :--- | :--- | :--- |
-| `VITE_API_URL` | Production Render backend API URL | `https://arcshield-api.onrender.com` |
-| `VITE_SOCKET_URL` | Production Socket.IO backend URL | `https://arcshield-api.onrender.com` |
-
-> **⚠️ SECURITY RULE**: Never put database credentials, Redis URLs, or JWT secrets in client environment variables.
+> **⚠️ SECURITY RULE**: Never put database credentials, Redis URLs, or JWT secrets in client environment variables. Only variables prefixed with `VITE_` are exposed to the browser.
 
 ---
 
@@ -117,23 +112,26 @@ The platform ingests real-time safety telemetry from connected smart PPE helmets
 - npm (v9+)
 - *(Optional)* Local MongoDB & Redis, or use cloud connection strings.
 
-### 2. Backend Installation & Start
+### 2. Environment Setup (Root)
+```bash
+# In the project root directory:
+cp .env.example .env
+```
+
+### 3. Backend Installation & Start
 ```bash
 cd server
 npm install
-cp .env.example .env
-# Edit .env if connecting to live Atlas/Redis instances
 npm run dev
-# Server listening on http://localhost:5000
+# Server listening on http://localhost:5000 (reads root .env)
 ```
 
-### 3. Frontend Installation & Start
+### 4. Frontend Installation & Start
 ```bash
 cd client
 npm install
-cp .env.example .env
 npm run dev -- --port 3000
-# React App available at http://localhost:3000
+# React App available at http://localhost:3000 (reads root .env)
 ```
 
 ---

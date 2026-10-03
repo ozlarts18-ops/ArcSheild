@@ -62,8 +62,13 @@ const alertSchema = new mongoose.Schema({
     default: ''
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'alerts'
 });
+
+alertSchema.index({ userId: 1, createdAt: -1 });
+alertSchema.index({ helmetId: 1, createdAt: -1 });
+alertSchema.index({ status: 1, severity: 1 });
 
 export const Alert = mongoose.models.Alert || mongoose.model('Alert', alertSchema);
 export default Alert;

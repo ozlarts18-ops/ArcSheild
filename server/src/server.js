@@ -22,7 +22,15 @@ import {
 } from './services/store.js';
 import { SimulatorService } from './services/simulatorService.js';
 import { createApiRouter } from './routes/api.js';
+import initializeDatabase from './services/dbInitService.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Centralized root .env loading
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
 
 const app = express();
@@ -51,22 +59,20 @@ app.use(cors({
     // Allow requests with no origin (e.g. mobile apps, curl, server-to-server health checks)
     if (!origin) return callback(null, true);
     
-    const isAllowed = allowedOrigins.some(allowed => 
-      origin === allowed || 
-      origin.startsWith(allowed) || 
-      (!SECURITY_CONFIG.IS_PRODUCTION && origin.includes('localhost'))
-    );
+    const cleanOrigin = origin.trim().replace(/\/$/, '');
+    const isAllowed = allowedOrigins.some(allowed => {
+      const cleanAllowed = allowed.trim().replace(/\/$/, '');
+      return cleanOrigin === cleanAllowed || 
+        cleanOrigin.startsWith(cleanAllowed) ||
+        (!SECURITY_CONFIG.IS_PRODUCTION && cleanOrigin.includes('localhost'));
+    });
 
     if (isAllowed) {
       return callback(null, true);
     }
     
-    if (SECURITY_CONFIG.IS_PRODUCTION) {
-      console.warn(`[CORS] Blocked unauthorized origin: ${origin}`);
-      return callback(new Error(`CORS Error: Origin ${origin} not authorized by ArcShield security policy.`));
-    }
-
-    return callback(null, true);
+    console.warn(`[CORS] Blocked unauthorized origin: ${origin}`);
+    return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
@@ -146,14 +152,19 @@ const simulator = new SimulatorService(state, io);
 simulator.startBackgroundSimulation();
 
 // 7. Mount API Routes
-app.use('/api', createApiRouter(state, simulator, io));
+app.use('/api', apiLimiter, createApiRouter(state, simulator, io));
 
 // 8. Safe Public Health Check Endpoint
 app.get('/health', (req, res) => {
+  const redisInfo = getRedisStatus();
+  const dbInfo = getDBStatus();
   res.json({
     status: 'ok',
     service: 'ArcShield Connected Safety System',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    database: dbInfo.connected ? 'connected' : (dbInfo.status || 'disconnected'),
+    redis: redisInfo.connected ? 'connected' : (redisInfo.type === 'in-memory' ? 'in-memory-fallback' : 'disconnected'),
+    redisMode: redisInfo.mode
   });
 });
 
@@ -164,8 +175,11 @@ const PORT = process.env.PORT || 5000;
 
 async function start() {
   // Initialize Database and Redis concurrently
-  await connectDB();
-  initRedis();
+  const dbConnected = await connectDB();
+  if (dbConnected) {
+    await initializeDatabase();
+  }
+  await initRedis();
 
   server.listen(PORT, () => {
     console.log(`\n======================================================`);
