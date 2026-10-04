@@ -40,9 +40,6 @@ export default function AdminLoginPage() {
           </div>
           <span className="font-bold text-xl text-[#0f294a] tracking-tight">ARCSHIELD</span>
         </Link>
-        <div className="inline-block text-[11px] font-bold font-mono uppercase px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
-          Administrator & Safety Directorate Portal
-        </div>
       </div>
 
       {/* Admin Login Card */}
