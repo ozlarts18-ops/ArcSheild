@@ -12,7 +12,12 @@ import {
   adminLoginSchema, 
   sensorIngestionSchema, 
   alertLifecycleSchema, 
-  createIncidentSchema 
+  createIncidentSchema,
+  adminCreateUserSchema,
+  adminUpdateUserSchema,
+  assignHelmetSchema,
+  changePasswordSchema,
+  updateProfileSchema
 } from '../validation/schemas.js';
 import mongoose from 'mongoose';
 import { User } from '../models/User.js';
@@ -122,6 +127,88 @@ export const createApiRouter = (state, simulator, io) => {
       success: true,
       user: req.user
     });
+  });
+
+  // Profile Update (Name, Phone, Workshop, Trade)
+  router.patch('/auth/profile', authenticateJwt, validateBody(updateProfileSchema), async (req, res) => {
+    try {
+      const { name, phoneNumber, workshop, trade } = req.body;
+      const userId = req.user?.id;
+      const isDb = mongoose.connection.readyState === 1;
+
+      if (isDb && userId) {
+        const user = await User.findOne({ userId });
+        if (user) {
+          if (name) user.name = name;
+          if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
+          if (workshop) user.workshop = workshop;
+          if (trade) user.trade = trade;
+          await user.save();
+
+          await auditLogger.logEvent({
+            eventType: 'PROFILE_UPDATED',
+            userId,
+            role: user.role,
+            ipAddress: req.ip,
+            resource: '/api/auth/profile',
+            action: 'PATCH',
+            success: true
+          });
+
+          return res.json({
+            success: true,
+            message: 'Profile updated successfully.',
+            user: user.toSafeObject()
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        message: 'Profile updated successfully.',
+        user: { ...req.user, ...(name && { name }), ...(phoneNumber && { phoneNumber }), ...(workshop && { workshop }), ...(trade && { trade }) }
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Change Password Endpoint
+  router.post('/auth/change-password', authenticateJwt, validateBody(changePasswordSchema), async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const userId = req.user?.id;
+      const isDb = mongoose.connection.readyState === 1;
+
+      if (isDb && userId) {
+        const user = await User.findOne({ userId });
+        if (!user) {
+          return res.status(404).json({ success: false, message: 'User account not found.' });
+        }
+        const isValid = await user.comparePassword(currentPassword);
+        if (!isValid) {
+          return res.status(400).json({ success: false, message: 'Current password is incorrect.' });
+        }
+        user.passwordHash = await User.hashPassword(newPassword);
+        await user.save();
+
+        await auditLogger.logEvent({
+          eventType: 'PASSWORD_CHANGED',
+          userId,
+          role: user.role,
+          ipAddress: req.ip,
+          resource: '/api/auth/change-password',
+          action: 'POST',
+          success: true
+        });
+
+        return res.json({ success: true, message: 'Password updated successfully.' });
+      }
+
+      res.json({ success: true, message: 'Password updated successfully.' });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // Token Refresh Endpoint
@@ -529,30 +616,112 @@ export const createApiRouter = (state, simulator, io) => {
   // -------------------------------------------------------------
 
   // Admin Overview Metrics
-  router.get('/admin/overview', authenticateJwt, requireAdmin, apiLimiter, (req, res) => {
-    const totalHelmets = state.helmets.length;
-    const onlineHelmets = state.helmets.filter(h => h.connectionStatus === 'ONLINE').length;
-    const offlineHelmets = state.helmets.filter(h => h.connectionStatus === 'OFFLINE').length;
-    const activeWarnings = state.alerts.filter(a => a.severity === 'WARNING' && a.lifecycleStatus === 'ACTIVE').length;
-    const criticalAlerts = state.alerts.filter(a => a.severity === 'CRITICAL' && a.lifecycleStatus === 'ACTIVE').length;
-    const incidentsToday = state.incidents.filter(i => i.type === 'INCIDENT').length;
-    const nearMissesToday = state.incidents.filter(i => i.type === 'NEAR_MISS').length;
+  router.get('/admin/overview', authenticateJwt, requireAdmin, apiLimiter, async (req, res) => {
+    try {
+      const isDb = mongoose.connection.readyState === 1;
+      if (isDb) {
+        const [
+          totalHelmets,
+          onlineHelmets,
+          offlineHelmets,
+          activeWarnings,
+          criticalAlerts,
+          incidentsToday,
+          nearMissesToday,
+          activeUsersCount,
+          dbUsers,
+          dbHelmets
+        ] = await Promise.all([
+          Helmet.countDocuments(),
+          Helmet.countDocuments({ connectionStatus: 'ONLINE' }),
+          Helmet.countDocuments({ connectionStatus: 'OFFLINE' }),
+          Alert.countDocuments({ severity: 'WARNING', status: 'ACTIVE' }),
+          Alert.countDocuments({ severity: 'CRITICAL', status: 'ACTIVE' }),
+          Incident.countDocuments({ type: 'INCIDENT' }),
+          Incident.countDocuments({ type: 'NEAR_MISS' }),
+          User.countDocuments({ role: 'USER' }),
+          User.find({ role: 'USER' }).sort({ updatedAt: -1 }).limit(10).lean(),
+          Helmet.find().lean()
+        ]);
 
-    res.json({
-      success: true,
-      data: {
-        activeUsersCount: state.workers.length,
-        connectedHelmetsCount: onlineHelmets,
-        totalHelmetsCount: totalHelmets,
-        offlineHelmetsCount: offlineHelmets,
-        activeWarningsCount: activeWarnings,
-        criticalAlertsCount: criticalAlerts,
-        incidentsToday,
-        nearMissesToday,
-        compliancePercent: 98.4,
-        avgResponseSec: 18
+        const activeFleetList = dbUsers.map(u => {
+          const helmet = dbHelmets.find(h => h.assignedUserId === u.userId || h.helmetId === u.assignedHelmetId);
+          return {
+            id: u.userId,
+            name: u.name,
+            email: u.email,
+            helmetId: u.assignedHelmetId || (helmet ? helmet.helmetId : 'Unassigned'),
+            trade: u.trade || 'Welding',
+            workshop: u.workshop || 'Welding Bay 01',
+            zone: helmet?.zone || 'Zone A',
+            safetyStatus: helmet ? helmet.safetyState : 'SAFE',
+            connection: helmet ? (helmet.connectionStatus === 'ONLINE' ? 'Online' : 'Offline') : 'Offline',
+            lastActive: helmet?.lastSeen || u.updatedAt || new Date().toISOString()
+          };
+        });
+
+        return res.json({
+          success: true,
+          data: {
+            activeUsersCount,
+            connectedHelmetsCount: onlineHelmets,
+            totalHelmetsCount: totalHelmets,
+            offlineHelmetsCount: offlineHelmets,
+            activeWarningsCount: activeWarnings,
+            criticalAlertsCount: criticalAlerts,
+            incidentsToday,
+            nearMissesToday,
+            compliancePercent: 98.4,
+            avgResponseSec: 18,
+            activeFleet: activeFleetList
+          }
+        });
       }
-    });
+
+      // In-memory fallback
+      const totalHelmets = state.helmets.length;
+      const onlineHelmets = state.helmets.filter(h => h.connectionStatus === 'ONLINE').length;
+      const offlineHelmets = state.helmets.filter(h => h.connectionStatus === 'OFFLINE').length;
+      const activeWarnings = state.alerts.filter(a => a.severity === 'WARNING' && a.lifecycleStatus === 'ACTIVE').length;
+      const criticalAlerts = state.alerts.filter(a => a.severity === 'CRITICAL' && a.lifecycleStatus === 'ACTIVE').length;
+      const incidentsToday = state.incidents.filter(i => i.type === 'INCIDENT').length;
+      const nearMissesToday = state.incidents.filter(i => i.type === 'NEAR_MISS').length;
+
+      const activeFleetList = state.workers.map(w => {
+        const helmet = state.helmets.find(h => h.assignedWorker?.id === w.id);
+        return {
+          id: w.id,
+          name: w.name,
+          email: w.email || `${w.name.toLowerCase().replace(' ', '.')}@arcshield.local`,
+          helmetId: helmet ? helmet.id : 'Unassigned',
+          trade: w.trade || 'Welding',
+          workshop: w.zone || 'Welding Bay 01',
+          zone: 'Zone A',
+          safetyStatus: helmet ? helmet.safetyState : 'SAFE',
+          connection: helmet?.connectionStatus === 'ONLINE' ? 'Online' : 'Offline',
+          lastActive: new Date().toISOString()
+        };
+      });
+
+      res.json({
+        success: true,
+        data: {
+          activeUsersCount: state.workers.length,
+          connectedHelmetsCount: onlineHelmets,
+          totalHelmetsCount: totalHelmets,
+          offlineHelmetsCount: offlineHelmets,
+          activeWarningsCount: activeWarnings,
+          criticalAlertsCount: criticalAlerts,
+          incidentsToday,
+          nearMissesToday,
+          compliancePercent: 98.4,
+          avgResponseSec: 18,
+          activeFleet: activeFleetList
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // Admin Helmets Fleet Inventory
@@ -566,6 +735,7 @@ export const createApiRouter = (state, simulator, io) => {
         helmets = dbHelmets.map(h => ({
           helmetId: h.helmetId,
           assignedUser: h.assignedUserName || 'Unassigned',
+          assignedUserId: h.assignedUserId || null,
           trade: h.trade || 'Welding',
           workshop: h.workshop || 'Main Workshop',
           zone: h.zone || 'Zone A',
@@ -578,6 +748,7 @@ export const createApiRouter = (state, simulator, io) => {
         helmets = state.helmets.map(h => ({
           helmetId: h.id,
           assignedUser: h.assignedWorker?.name || 'Unassigned',
+          assignedUserId: h.assignedWorker?.id || null,
           trade: h.assignedWorker?.trade || 'Welding',
           workshop: h.assignedWorker?.zone || 'Main Workshop',
           zone: 'Zone A',
@@ -594,13 +765,63 @@ export const createApiRouter = (state, simulator, io) => {
     }
   });
 
+  // Admin Assign User to Helmet
+  router.post('/admin/helmets/:helmetId/assign', authenticateJwt, requireAdmin, async (req, res) => {
+    try {
+      const { helmetId } = req.params;
+      const { userId } = req.body;
+      const isDb = mongoose.connection.readyState === 1;
+
+      if (isDb) {
+        const helmet = await Helmet.findOne({ helmetId });
+        if (!helmet) return res.status(404).json({ success: false, message: 'Safety helmet not found.' });
+
+        let userName = 'Unassigned';
+        if (userId && userId !== 'Unassigned') {
+          const user = await User.findOne({ userId });
+          if (user) {
+            userName = user.name;
+            user.assignedHelmetId = helmetId;
+            await user.save();
+          }
+        } else {
+          // Unassign previous user if any
+          if (helmet.assignedUserId) {
+            await User.findOneAndUpdate({ userId: helmet.assignedUserId }, { assignedHelmetId: '' }).catch(() => {});
+          }
+        }
+
+        helmet.assignedUserId = userId !== 'Unassigned' ? userId : null;
+        helmet.assignedUserName = userName;
+        await helmet.save();
+
+        await auditLogger.logEvent({
+          eventType: 'HELMET_ASSIGNMENT_CHANGED',
+          userId: req.user?.id,
+          role: 'ADMIN',
+          ipAddress: req.ip,
+          resource: `/api/admin/helmets/${helmetId}/assign`,
+          action: 'POST',
+          success: true,
+          metadata: { helmetId, assignedUserId: userId, assignedUserName: userName }
+        });
+
+        return res.json({ success: true, message: `Safety gear ${helmetId} paired with ${userName}.`, helmet });
+      } else {
+        return res.json({ success: true, message: `Safety gear ${helmetId} assigned.` });
+      }
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   // Admin Users / Trainees Directory
   router.get('/admin/users', authenticateJwt, requireAdmin, apiLimiter, async (req, res) => {
     try {
       const isDb = mongoose.connection.readyState === 1;
       let users = [];
       if (isDb) {
-        const dbUsers = await User.find({ role: 'USER' }).lean();
+        const dbUsers = await User.find().sort({ createdAt: -1 }).lean();
         const dbHelmets = await Helmet.find().lean();
         users = dbUsers.map(u => {
           const helmet = dbHelmets.find(h => h.assignedUserId === u.userId || h.helmetId === u.assignedHelmetId);
@@ -608,11 +829,17 @@ export const createApiRouter = (state, simulator, io) => {
             id: u.userId,
             name: u.name,
             email: u.email,
-            trade: u.trade,
-            assignedHelmet: u.assignedHelmetId || 'ARC-001',
+            phoneNumber: u.phoneNumber || '',
+            role: u.role || 'USER',
+            trade: u.trade || 'Welding',
+            assignedHelmet: u.assignedHelmetId || (helmet ? helmet.helmetId : 'Unassigned'),
             workshop: u.workshop || 'Welding Bay 01',
+            zone: helmet?.zone || 'Zone A',
             currentSafety: helmet ? helmet.safetyState : 'SAFE',
-            connection: helmet?.connectionStatus === 'ONLINE' ? 'Online' : 'Offline'
+            connection: helmet?.connectionStatus === 'ONLINE' ? 'Online' : 'Offline',
+            isActive: u.isActive !== undefined ? u.isActive : true,
+            createdAt: u.createdAt,
+            lastLogin: u.lastLogin
           };
         });
       } else {
@@ -621,17 +848,259 @@ export const createApiRouter = (state, simulator, io) => {
           return {
             id: w.id,
             name: w.name,
-            email: w.email || `${w.name.toLowerCase().replace(' ', '.')}@iti.edu`,
+            email: w.email || `${w.name.toLowerCase().replace(' ', '.')}@arcshield.local`,
+            phoneNumber: '+91 98765 43210',
+            role: 'USER',
             trade: w.trade,
-            assignedHelmet: helmet ? helmet.id : 'ARC-001',
+            assignedHelmet: helmet ? helmet.id : 'Unassigned',
             workshop: w.zone || 'Welding Bay 01',
+            zone: 'Zone A',
             currentSafety: helmet ? helmet.safetyState : 'SAFE',
-            connection: 'Online'
+            connection: helmet?.connectionStatus === 'ONLINE' ? 'Online' : 'Offline',
+            isActive: true,
+            createdAt: new Date().toISOString()
           };
         });
       }
 
       res.json({ success: true, users, data: { users } });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Admin Create New User
+  router.post('/admin/users', authenticateJwt, requireAdmin, validateBody(adminCreateUserSchema), async (req, res) => {
+    try {
+      const { name, email, phoneNumber, trade, workshop, zone, assignedHelmetId, role, password, isActive } = req.body;
+      const normalizedEmail = email.toLowerCase().trim();
+      const isDb = mongoose.connection.readyState === 1;
+      const finalRole = (role === 'ADMIN' && req.user?.role === 'ADMIN') ? role : 'USER';
+      const userPassword = password || 'ArcShield@2026';
+
+      if (isDb) {
+        const existing = await User.findOne({ email: normalizedEmail });
+        if (existing) {
+          return res.status(400).json({ success: false, message: 'An account is already associated with this email address.' });
+        }
+
+        const passwordHash = await User.hashPassword(userPassword);
+        const newUserId = `USR-${Date.now().toString().slice(-4)}`;
+
+        const createdUser = await User.create({
+          userId: newUserId,
+          name,
+          email: normalizedEmail,
+          passwordHash,
+          role: finalRole,
+          trade: trade || 'Welding',
+          workshop: workshop || 'Welding Bay 01',
+          assignedHelmetId: assignedHelmetId && assignedHelmetId !== 'Unassigned' ? assignedHelmetId : '',
+          phoneNumber: phoneNumber || '',
+          isActive: isActive !== undefined ? isActive : true
+        });
+
+        // Pair helmet if provided
+        if (assignedHelmetId && assignedHelmetId !== 'Unassigned') {
+          await Helmet.findOneAndUpdate(
+            { helmetId: assignedHelmetId },
+            { assignedUserId: newUserId, assignedUserName: name, trade, workshop, zone: zone || 'Zone A' }
+          ).catch(() => {});
+        }
+
+        await auditLogger.logEvent({
+          eventType: 'ADMIN_CREATE_USER',
+          userId: req.user?.id,
+          role: 'ADMIN',
+          ipAddress: req.ip,
+          resource: '/api/admin/users',
+          action: 'POST',
+          success: true,
+          metadata: { createdUserId: newUserId, email: normalizedEmail }
+        });
+
+        return res.status(201).json({
+          success: true,
+          message: 'User created successfully.',
+          user: createdUser.toSafeObject()
+        });
+      } else {
+        const newUserId = `USR-${Date.now().toString().slice(-4)}`;
+        const newUser = {
+          id: newUserId,
+          name,
+          email: normalizedEmail,
+          role: finalRole,
+          trade: trade || 'Welding',
+          workshop: workshop || 'Welding Bay 01',
+          assignedHelmetId: assignedHelmetId || 'Unassigned',
+          phoneNumber: phoneNumber || '',
+          isActive: isActive !== undefined ? isActive : true,
+          createdAt: new Date().toISOString()
+        };
+        state.workers.unshift({ id: newUserId, name, trade, zone: workshop, status: 'ACTIVE' });
+
+        return res.status(201).json({
+          success: true,
+          message: 'User created successfully.',
+          user: newUser
+        });
+      }
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Admin Edit User Details
+  router.patch('/admin/users/:userId', authenticateJwt, requireAdmin, validateBody(adminUpdateUserSchema), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { name, email, phoneNumber, trade, workshop, zone, assignedHelmetId, isActive } = req.body;
+      const isDb = mongoose.connection.readyState === 1;
+
+      if (isDb) {
+        const user = await User.findOne({ userId });
+        if (!user) {
+          return res.status(404).json({ success: false, message: 'User not found.' });
+        }
+
+        const oldHelmetId = user.assignedHelmetId;
+
+        if (name) user.name = name;
+        if (email) user.email = email.toLowerCase().trim();
+        if (phoneNumber !== undefined) user.phoneNumber = phoneNumber;
+        if (trade) user.trade = trade;
+        if (workshop) user.workshop = workshop;
+        if (isActive !== undefined) user.isActive = isActive;
+        if (assignedHelmetId !== undefined) user.assignedHelmetId = assignedHelmetId === 'Unassigned' ? '' : assignedHelmetId;
+
+        await user.save();
+
+        // Update Helmet pairing if assignedHelmetId changed
+        if (assignedHelmetId !== undefined && assignedHelmetId !== oldHelmetId) {
+          if (oldHelmetId) {
+            await Helmet.findOneAndUpdate(
+              { helmetId: oldHelmetId },
+              { assignedUserId: null, assignedUserName: 'Unassigned' }
+            ).catch(() => {});
+          }
+          if (assignedHelmetId && assignedHelmetId !== 'Unassigned') {
+            await Helmet.findOneAndUpdate(
+              { helmetId: assignedHelmetId },
+              { assignedUserId: user.userId, assignedUserName: user.name, trade: user.trade, workshop: user.workshop, zone: zone || 'Zone A' }
+            ).catch(() => {});
+          }
+        }
+
+        await auditLogger.logEvent({
+          eventType: 'ADMIN_UPDATE_USER',
+          userId: req.user?.id,
+          role: 'ADMIN',
+          ipAddress: req.ip,
+          resource: `/api/admin/users/${userId}`,
+          action: 'PATCH',
+          success: true,
+          metadata: { targetUserId: userId }
+        });
+
+        return res.json({ success: true, message: 'User updated successfully.', user: user.toSafeObject() });
+      } else {
+        const worker = state.workers.find(w => w.id === userId);
+        if (worker) {
+          if (name) worker.name = name;
+          if (trade) worker.trade = trade;
+          if (workshop) worker.zone = workshop;
+        }
+        return res.json({ success: true, message: 'User updated successfully.' });
+      }
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Admin Toggle User Status (Enable/Disable)
+  router.patch('/admin/users/:userId/status', authenticateJwt, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { isActive } = req.body;
+      const isDb = mongoose.connection.readyState === 1;
+
+      if (isDb) {
+        const user = await User.findOne({ userId });
+        if (!user) {
+          return res.status(404).json({ success: false, message: 'User not found.' });
+        }
+        user.isActive = isActive !== undefined ? isActive : !user.isActive;
+        await user.save();
+
+        await auditLogger.logEvent({
+          eventType: 'USER_STATUS_TOGGLED',
+          userId: req.user?.id,
+          role: 'ADMIN',
+          ipAddress: req.ip,
+          resource: `/api/admin/users/${userId}/status`,
+          action: 'PATCH',
+          success: true,
+          metadata: { targetUserId: userId, newStatus: user.isActive ? 'ACTIVE' : 'DISABLED' }
+        });
+
+        return res.json({
+          success: true,
+          message: `User account is now ${user.isActive ? 'Active' : 'Disabled'}.`,
+          isActive: user.isActive
+        });
+      } else {
+        return res.json({ success: true, message: 'User status updated.', isActive });
+      }
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Admin Assign / Reassign Helmet to User
+  router.post('/admin/users/:userId/assign-helmet', authenticateJwt, requireAdmin, validateBody(assignHelmetSchema), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { helmetId } = req.body;
+      const isDb = mongoose.connection.readyState === 1;
+
+      if (isDb) {
+        const user = await User.findOne({ userId });
+        if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+        const previousHelmetId = user.assignedHelmetId;
+        user.assignedHelmetId = helmetId === 'Unassigned' ? '' : (helmetId || '');
+        await user.save();
+
+        if (previousHelmetId && previousHelmetId !== helmetId) {
+          await Helmet.findOneAndUpdate(
+            { helmetId: previousHelmetId },
+            { assignedUserId: null, assignedUserName: 'Unassigned' }
+          ).catch(() => {});
+        }
+
+        if (helmetId && helmetId !== 'Unassigned') {
+          await Helmet.findOneAndUpdate(
+            { helmetId },
+            { assignedUserId: user.userId, assignedUserName: user.name, trade: user.trade, workshop: user.workshop }
+          ).catch(() => {});
+        }
+
+        await auditLogger.logEvent({
+          eventType: 'USER_HELMET_ASSIGNMENT',
+          userId: req.user?.id,
+          role: 'ADMIN',
+          ipAddress: req.ip,
+          resource: `/api/admin/users/${userId}/assign-helmet`,
+          action: 'POST',
+          success: true,
+          metadata: { userId, previousHelmetId, newHelmetId: helmetId }
+        });
+
+        return res.json({ success: true, message: `Safety gear ${helmetId || 'Unassigned'} assigned to ${user.name}.` });
+      } else {
+        return res.json({ success: true, message: 'Safety gear assigned.' });
+      }
     } catch (err) {
       res.status(500).json({ success: false, message: err.message });
     }
@@ -836,7 +1305,7 @@ export const createApiRouter = (state, simulator, io) => {
     const summary = {
       reportId: `REP-${Date.now()}`,
       generatedAt: new Date().toISOString(),
-      institution: 'Industrial Training Institute (ITI) Safety Directorate',
+      institution: 'ArcShield Institutional Safety Directorate',
       scope: 'Workshop-Wide Multi-Trade PPE Monitoring',
       totalActiveHelmets: state.helmets.length,
       averageCompliance: 98.4,
@@ -846,6 +1315,48 @@ export const createApiRouter = (state, simulator, io) => {
     };
 
     res.json({ success: true, report: summary, data: summary });
+  });
+
+  // Admin All Reports Aggregated Data
+  router.get('/admin/reports/all', authenticateJwt, requireAdmin, reportLimiter, async (req, res) => {
+    try {
+      const isDb = mongoose.connection.readyState === 1;
+      let users = [], helmets = [], alerts = [], incidents = [];
+      if (isDb) {
+        [users, helmets, alerts, incidents] = await Promise.all([
+          User.find({ role: 'USER' }).lean(),
+          Helmet.find().lean(),
+          Alert.find().sort({ createdAt: -1 }).limit(100).lean(),
+          Incident.find().sort({ createdAt: -1 }).limit(100).lean()
+        ]);
+      } else {
+        users = state.workers;
+        helmets = state.helmets;
+        alerts = state.alerts;
+        incidents = state.incidents;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          summary: {
+            totalUsers: users.length,
+            totalHelmets: helmets.length,
+            onlineHelmets: helmets.filter(h => (h.connectionStatus || h.connection) === 'ONLINE' || h.connection === 'Online').length,
+            totalAlerts: alerts.length,
+            totalIncidents: incidents.filter(i => i.type === 'INCIDENT').length,
+            totalNearMisses: incidents.filter(i => i.type === 'NEAR_MISS').length,
+            overallCompliance: 98.4
+          },
+          users,
+          helmets,
+          alerts,
+          incidents
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
   });
 
   // Admin System Security Status Check

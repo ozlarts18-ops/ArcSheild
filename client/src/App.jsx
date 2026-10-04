@@ -27,7 +27,7 @@ import AdminUsersView from './pages/admin/AdminUsersView';
 import AdminAlertsView from './pages/admin/AdminAlertsView';
 import AdminIncidentsView from './pages/admin/AdminIncidentsView';
 import AdminAnalyticsView from './pages/admin/AdminAnalyticsView';
-import AdminSystemView from './pages/admin/AdminSystemView';
+import AdminReportsView from './pages/admin/AdminReportsView';
 
 // Protected Route Helpers
 function UserProtectedRoute({ children }) {
@@ -101,7 +101,8 @@ export default function App() {
             <Route path="alerts" element={<AdminAlertsView />} />
             <Route path="incidents" element={<AdminIncidentsView />} />
             <Route path="analytics" element={<AdminAnalyticsView />} />
-            <Route path="system" element={<AdminSystemView />} />
+            <Route path="reports" element={<AdminReportsView />} />
+            <Route path="system" element={<Navigate to="/admin/dashboard" replace />} />
           </Route>
 
           {/* Fallback */}

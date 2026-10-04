@@ -60,3 +60,44 @@ export const createIncidentSchema = z.object({
   workshop: z.string().max(100).optional().default('Welding Bay 01'),
   actionTaken: z.string().max(1000).optional().default('')
 });
+
+export const adminCreateUserSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+  email: z.string().email('Please enter a valid email address').max(100),
+  phoneNumber: z.string().max(25).optional().default(''),
+  trade: z.string().max(80).optional().default('Welding'),
+  workshop: z.string().max(80).optional().default('Welding Bay 01'),
+  zone: z.string().max(50).optional().default('Zone A'),
+  assignedHelmetId: z.string().max(30).optional().default(''),
+  role: z.enum(['USER', 'ADMIN']).optional().default('USER'),
+  password: z.string().min(6).max(128).optional(),
+  isActive: z.boolean().optional().default(true)
+});
+
+export const adminUpdateUserSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  email: z.string().email().max(100).optional(),
+  phoneNumber: z.string().max(25).optional(),
+  trade: z.string().max(80).optional(),
+  workshop: z.string().max(80).optional(),
+  zone: z.string().max(50).optional(),
+  assignedHelmetId: z.string().max(30).optional(),
+  isActive: z.boolean().optional()
+});
+
+export const assignHelmetSchema = z.object({
+  helmetId: z.string().max(30).optional().default('')
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(6, 'Current password is required').max(128),
+  newPassword: z.string().min(6, 'New password must be at least 6 characters').max(128)
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  phoneNumber: z.string().max(25).optional(),
+  workshop: z.string().max(80).optional(),
+  trade: z.string().max(80).optional()
+});
+

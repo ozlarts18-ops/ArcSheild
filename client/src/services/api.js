@@ -141,6 +141,60 @@ export async function fetchAdminUsersApi() {
 }
 export const getAdminUsers = fetchAdminUsersApi;
 
+export async function createAdminUserApi(userData) {
+  return secureFetch('/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(userData)
+  });
+}
+
+export async function updateAdminUserApi(userId, userData) {
+  return secureFetch(`/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(userData)
+  });
+}
+
+export async function toggleUserStatusApi(userId, isActive) {
+  return secureFetch(`/admin/users/${userId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive })
+  });
+}
+
+export async function assignHelmetToUserApi(userId, helmetId) {
+  return secureFetch(`/admin/users/${userId}/assign-helmet`, {
+    method: 'POST',
+    body: JSON.stringify({ helmetId })
+  });
+}
+
+export async function assignUserToHelmetApi(helmetId, userId) {
+  return secureFetch(`/admin/helmets/${helmetId}/assign`, {
+    method: 'POST',
+    body: JSON.stringify({ userId })
+  });
+}
+
+export async function updateProfileApi(profileData) {
+  return secureFetch('/auth/profile', {
+    method: 'PATCH',
+    body: JSON.stringify(profileData)
+  });
+}
+
+export async function changePasswordApi(passwordData) {
+  return secureFetch('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(passwordData)
+  });
+}
+
+export async function fetchAdminReportsAllApi() {
+  return secureFetch('/admin/reports/all');
+}
+
+
 export async function fetchAdminLiveApi() {
   return secureFetch('/admin/live');
 }
