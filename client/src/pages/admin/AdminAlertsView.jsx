@@ -117,7 +117,7 @@ export default function AdminAlertsView() {
                       </div>
                     </td>
                     <td className="px-4 py-3.5 text-slate-700 max-w-xs truncate">{a.message}</td>
-                    <td className="px-4 py-3.5 font-bold text-slate-900">{a.userName || 'Rahul Sharma'}</td>
+                    <td className="px-4 py-3.5 font-bold text-slate-900">{a.userName || 'Assigned Worker'}</td>
                     <td className="px-4 py-3.5 text-slate-600 font-mono">{a.helmetId || 'ARC-001'}</td>
                     <td className="px-4 py-3.5 text-slate-500">
                       {new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

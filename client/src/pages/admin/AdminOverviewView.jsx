@@ -179,8 +179,8 @@ export default function AdminOverviewView() {
             <tbody className="divide-y divide-slate-100 font-medium">
               <tr className="hover:bg-slate-50/80">
                 <td className="px-4 py-3 font-bold text-slate-900">ARC-001</td>
-                <td className="px-4 py-3 text-slate-800">Rahul Sharma</td>
-                <td className="px-4 py-3 text-slate-600">Welding</td>
+                <td className="px-4 py-3 text-slate-800">Alex Chen</td>
+                <td className="px-4 py-3 text-slate-600">Industrial Welding</td>
                 <td className="px-4 py-3 text-slate-600">Welding Bay 01</td>
                 <td className="px-4 py-3">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">

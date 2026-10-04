@@ -72,16 +72,6 @@ export async function initializeDatabase() {
 
       const initialUsers = [
         {
-          userId: 'USR-101',
-          name: 'Rahul Sharma',
-          email: 'rahul.welder@iti.edu',
-          passwordHash: defaultPasswordHash,
-          role: 'USER',
-          trade: 'Welding',
-          workshop: 'Welding Bay 01',
-          assignedHelmetId: 'ARC-001'
-        },
-        {
           userId: 'USR-102',
           name: 'Alex Chen',
           email: 'alex.chen@arcshield.local',
@@ -122,8 +112,8 @@ export async function initializeDatabase() {
       console.log('[DB Init] Seeding initial helmet records...');
       const helmetsToInsert = INITIAL_HELMETS.map(h => ({
         helmetId: h.id,
-        assignedUserId: h.assignedWorker?.id || 'USR-101',
-        assignedUserName: h.assignedWorker?.name || 'Rahul Sharma',
+        assignedUserId: h.assignedWorkerId || 'USR-102',
+        assignedUserName: h.assignedWorkerName || 'Alex Chen',
         trade: h.trade || 'Welding',
         workshop: h.workshopZone || 'Welding Bay 01',
         zone: h.workshopZone || 'Zone A',
@@ -140,8 +130,8 @@ export async function initializeDatabase() {
       console.log('[DB Init] Seeding initial alerts...');
       const alertsToInsert = INITIAL_ALERTS.map(a => ({
         alertId: a.id,
-        userId: 'USR-101',
-        userName: a.workerName || 'Rahul Sharma',
+        userId: 'USR-102',
+        userName: a.workerName || 'Alex Chen',
         helmetId: a.helmetId || 'ARC-001',
         type: a.type || 'THERMAL',
         severity: a.severity || 'WARNING',
@@ -161,12 +151,12 @@ export async function initializeDatabase() {
         type: i.type || 'NEAR_MISS',
         title: i.title || 'Safety Near Miss',
         description: i.description || 'Pre-emptive safety warning triggered.',
-        affectedUserId: i.affectedWorker?.id || 'USR-101',
-        affectedUserName: i.affectedWorker?.name || 'Rahul Sharma',
+        affectedUserId: i.affectedWorker?.id || 'USR-102',
+        affectedUserName: i.workerName || i.affectedWorker?.name || 'Alex Chen',
         helmetId: i.helmetId || 'ARC-001',
-        workshop: i.zone || 'Welding Bay 01',
+        workshop: i.workshopZone || i.zone || 'Welding Bay 01',
         status: 'RESOLVED',
-        actionTaken: i.correctiveAction || 'Ventilation activated'
+        actionTaken: i.supervisorAction || i.correctiveAction || 'Ventilation activated'
       }));
       await Incident.insertMany(incidentsToInsert);
       console.log(`[DB Init] Created ${incidentsToInsert.length} initial incident records.`);
@@ -177,11 +167,11 @@ export async function initializeDatabase() {
       console.log('[DB Init] Seeding initial active session...');
       await Session.create({
         sessionId: ACTIVE_SESSION.id || 'SES-2026-001',
-        userId: 'USR-101',
-        userName: 'Rahul Sharma',
+        userId: 'USR-102',
+        userName: 'Alex Chen',
         helmetId: 'ARC-001',
-        workshop: 'Welding Bay 01',
-        trade: 'Welding',
+        workshop: 'Fabrication Bay 4',
+        trade: 'Industrial Welding',
         startedAt: new Date(Date.now() - 4 * 3600 * 1000),
         status: 'ACTIVE',
         durationSeconds: 16320,

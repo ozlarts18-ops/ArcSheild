@@ -22,7 +22,7 @@ export default function UserLiveMonitoringView() {
         overallSafety: cur.safetyState || 'SAFE',
         helmetId: user.assignedHelmetId || 'ARC-001',
         worker: {
-          name: user.name || 'Rahul Sharma',
+          name: user.name || 'Worker',
           trade: user.trade || 'Welding',
           workshop: user.zone || 'Welding Bay 01'
         },
@@ -148,7 +148,7 @@ export default function UserLiveMonitoringView() {
                  'Hazard Condition Active — Attention Required'}
               </h3>
               <p className="text-sm text-slate-600 mt-1">
-                Continuous telemetry confirmed for {worker.name || 'Rahul Sharma'} in {worker.workshop || 'Welding Bay 01'}.
+                Continuous telemetry confirmed for {worker.name || 'Worker'} in {worker.workshop || 'Welding Bay 01'}.
               </p>
             </div>
           </div>

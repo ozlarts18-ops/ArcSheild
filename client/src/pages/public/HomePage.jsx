@@ -239,7 +239,7 @@ export default function HomePage() {
             <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
               <div>
                 <div className="text-xs font-mono text-slate-500">ASSIGNED SAFETY GEAR</div>
-                <div className="text-sm font-bold text-slate-900">ARC-001 • Rahul Sharma (Welding)</div>
+                <div className="text-sm font-bold text-slate-900">ARC-001 • Trainee Operator (Welding)</div>
               </div>
               <span className="px-2.5 py-0.5 rounded text-xs font-mono font-bold badge-safe">
                 ● SAFE

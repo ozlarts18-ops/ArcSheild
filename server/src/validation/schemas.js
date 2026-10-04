@@ -55,7 +55,7 @@ export const createIncidentSchema = z.object({
   type: z.enum(['NEAR_MISS', 'INCIDENT']),
   title: z.string().min(3, 'Title is required').max(150),
   description: z.string().min(5, 'Description is required').max(2000),
-  affectedUser: z.string().max(100).optional().default('Rahul Sharma'),
+  affectedUser: z.string().max(100).optional().default('Active Worker'),
   helmetId: z.string().max(30).optional().default('ARC-001'),
   workshop: z.string().max(100).optional().default('Welding Bay 01'),
   actionTaken: z.string().max(1000).optional().default('')

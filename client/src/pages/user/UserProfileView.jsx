@@ -7,11 +7,11 @@ export default function UserProfileView() {
   const [saved, setSaved] = useState(false);
 
   const profileData = {
-    name: user?.name || 'Rahul Sharma',
-    email: user?.email || 'rahul.welder@iti.edu',
+    name: user?.name || 'Worker',
+    email: user?.email || '',
     trade: user?.trade || 'Welding & Thermal Fabrication',
     workshop: user?.workshop || 'Welding Bay 01',
-    helmetId: user?.helmetId || 'ARC-001',
+    helmetId: user?.assignedHelmetId || user?.helmetId || 'ARC-001',
     institution: 'National ITI Technical Training Centre',
     emergencyContact: '+91 98765 43210 (Supervisor Desk)'
   };

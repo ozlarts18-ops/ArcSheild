@@ -14,7 +14,7 @@ const sessionSchema = new mongoose.Schema({
   },
   userName: {
     type: String,
-    default: 'Rahul Sharma'
+    default: 'Active Worker'
   },
   helmetId: {
     type: String,

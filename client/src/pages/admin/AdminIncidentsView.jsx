@@ -10,7 +10,7 @@ export default function AdminIncidentsView() {
     type: 'NEAR_MISS',
     title: '',
     description: '',
-    affectedUser: 'Rahul Sharma',
+    affectedUser: 'Alex Chen',
     helmetId: 'ARC-001',
     workshop: 'Welding Bay 01',
     actionTaken: ''
@@ -40,7 +40,7 @@ export default function AdminIncidentsView() {
         type: 'NEAR_MISS',
         title: '',
         description: '',
-        affectedUser: 'Rahul Sharma',
+        affectedUser: 'Alex Chen',
         helmetId: 'ARC-001',
         workshop: 'Welding Bay 01',
         actionTaken: ''

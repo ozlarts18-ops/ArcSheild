@@ -162,8 +162,8 @@ export const createApiRouter = (state, simulator, io) => {
 
     const personalData = {
       user: {
-        id: req.user?.id || 'USR-101',
-        name: req.user?.name || helmet?.assignedWorker?.name || 'Rahul Sharma',
+        id: req.user?.id || req.user?.userId || 'USR-CURRENT',
+        name: req.user?.name || helmet?.assignedWorker?.name || 'Worker',
         trade: req.user?.trade || helmet?.assignedWorker?.trade || 'Welding',
         zone: helmet?.assignedWorker?.zone || 'Welding Bay 01',
         assignedHelmetId: helmet?.id || 'ARC-001',
@@ -249,7 +249,6 @@ export const createApiRouter = (state, simulator, io) => {
         myAlerts = state.alerts.filter(a => 
           a.helmetId === 'AS-001' || 
           a.helmetId === req.user?.assignedHelmetId ||
-          a.workerName?.includes('Rahul') ||
           a.workerName === req.user?.name
         ).map(a => ({
           id: a.id,
@@ -644,7 +643,7 @@ export const createApiRouter = (state, simulator, io) => {
       const r = state.readings[h.id] || {};
       return {
         helmetId: h.id,
-        assignedUser: h.assignedWorker?.name || 'Rahul Sharma',
+        assignedUser: h.assignedWorker?.name || 'Assigned Worker',
         trade: h.assignedWorker?.trade || 'Welding',
         workshop: h.assignedWorker?.zone || 'Welding Bay 01',
         safetyState: h.safetyState,
@@ -679,7 +678,7 @@ export const createApiRouter = (state, simulator, io) => {
           severity: a.severity,
           type: a.type,
           message: a.message,
-          userName: a.userName || 'Rahul Sharma',
+          userName: a.userName || 'Assigned Worker',
           helmetId: a.helmetId || 'ARC-001',
           timestamp: a.createdAt || a.timestamp || new Date().toISOString(),
           status: a.status || 'ACTIVE'
@@ -690,7 +689,7 @@ export const createApiRouter = (state, simulator, io) => {
           severity: a.severity,
           type: a.type,
           message: a.message,
-          userName: a.workerName || 'Rahul Sharma',
+          userName: a.workerName || 'Assigned Worker',
           helmetId: a.helmetId || 'ARC-001',
           timestamp: a.timestamp,
           status: a.lifecycleStatus || 'ACTIVE'
@@ -758,7 +757,7 @@ export const createApiRouter = (state, simulator, io) => {
           type: i.type,
           title: i.title,
           description: i.description,
-          affectedUser: i.affectedUserName || 'Rahul Sharma',
+          affectedUser: i.affectedUserName || 'Assigned Worker',
           helmetId: i.helmetId || 'ARC-001',
           workshop: i.workshop || 'Welding Bay 01',
           timestamp: i.createdAt || i.timestamp || new Date().toISOString(),
@@ -770,7 +769,7 @@ export const createApiRouter = (state, simulator, io) => {
           type: i.type,
           title: i.title,
           description: i.description,
-          affectedUser: i.affectedWorker?.name || 'Rahul Sharma',
+          affectedUser: i.affectedWorker?.name || 'Assigned Worker',
           helmetId: i.helmetId || 'ARC-001',
           workshop: i.zone || 'Welding Bay 01',
           timestamp: i.timestamp,
@@ -794,7 +793,7 @@ export const createApiRouter = (state, simulator, io) => {
         type: req.body.type,
         title: req.body.title,
         description: req.body.description,
-        affectedUserId: req.body.affectedUserId || 'USR-101',
+        affectedUserId: req.body.affectedUserId || null,
         affectedUserName: req.body.affectedUser,
         helmetId: req.body.helmetId,
         workshop: req.body.workshop,

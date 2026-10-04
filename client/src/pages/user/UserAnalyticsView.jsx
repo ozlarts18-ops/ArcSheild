@@ -10,8 +10,10 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { getMyAnalytics } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export default function UserAnalyticsView() {
+  const { currentUser } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('This Week');
@@ -88,7 +90,7 @@ export default function UserAnalyticsView() {
               Personal Safety Analytics & Compliance
             </h1>
             <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-              Rahul Sharma • ARC-001
+              {currentUser?.name || 'Worker'} • {currentUser?.assignedHelmetId || 'ARC-001'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">

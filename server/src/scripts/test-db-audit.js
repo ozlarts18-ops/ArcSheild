@@ -63,7 +63,7 @@ async function auditDatabase() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      email: 'rahul.welder@iti.edu',
+      email: 'alex.chen@arcshield.local',
       password: 'password123'
     })
   });

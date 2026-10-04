@@ -83,10 +83,10 @@ export default function UserDashboardLayout() {
             {/* User Profile dropdown/button */}
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
               <div className="w-7 h-7 rounded bg-[#0f294a] text-white flex items-center justify-center text-xs font-bold">
-                {currentUser?.name?.slice(0, 2)?.toUpperCase() || 'RS'}
+                {currentUser?.name?.slice(0, 2)?.toUpperCase() || 'WK'}
               </div>
               <div className="hidden lg:block text-left text-xs leading-tight">
-                <div className="font-bold text-slate-800">{currentUser?.name || 'Rahul Sharma'}</div>
+                <div className="font-bold text-slate-800">{currentUser?.name || 'Worker'}</div>
                 <div className="text-[10px] text-slate-500">{currentUser?.workshop || 'Welding Bay 01'}</div>
               </div>
               <button

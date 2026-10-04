@@ -13,17 +13,7 @@ export function AuthProvider({ children }) {
         return null;
       }
     }
-    // Default session baseline for Rahul Sharma (Normal User)
-    return {
-      id: 'USR-101',
-      name: 'Rahul Sharma',
-      email: 'rahul.welder@iti.edu',
-      role: 'USER',
-      trade: 'Welding',
-      workshop: 'Welding Bay 01',
-      assignedHelmetId: 'ARC-001',
-      certification: 'Level 2 Shielded Metal Arc Welding'
-    };
+    return null;
   });
 
   useEffect(() => {

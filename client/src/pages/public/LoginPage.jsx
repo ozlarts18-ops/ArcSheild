@@ -4,8 +4,8 @@ import { Shield, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle } from 'lucid
 import { useAuth } from '../../context/AuthContext';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('rahul.sharma@arcsheild.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { loginUser } = useAuth();

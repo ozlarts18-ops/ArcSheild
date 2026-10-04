@@ -9,16 +9,6 @@ import mongoose from 'mongoose';
 // In-memory credential store when DB is in fallback mode
 const inMemoryUsers = [
   {
-    id: 'USR-101',
-    name: 'Rahul Sharma',
-    email: 'rahul.welder@iti.edu',
-    passwordHash: bcrypt.hashSync('password123', 10),
-    role: 'USER',
-    trade: 'Welding',
-    workshop: 'Welding Bay 01',
-    assignedHelmetId: 'ARC-001'
-  },
-  {
     id: 'USR-102',
     name: 'Alex Chen',
     email: 'alex.chen@arcshield.local',

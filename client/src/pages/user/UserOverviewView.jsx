@@ -119,10 +119,10 @@ export default function UserOverviewView({ onNavigate }) {
       <div className="industrial-card p-4 bg-white flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded bg-[#0f294a] text-white flex items-center justify-center font-bold text-sm">
-            RS
+            {(currentUser?.name || 'Worker').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
           </div>
           <div>
-            <div className="font-bold text-slate-900 text-sm">{currentUser?.name || 'Rahul Sharma'}</div>
+            <div className="font-bold text-slate-900 text-sm">{currentUser?.name || 'Worker'}</div>
             <div className="text-xs text-slate-500 font-mono">
               Trade: <strong>{currentUser?.trade || 'Welding'}</strong> • Location: <strong>{currentUser?.workshop || 'Welding Bay 01'}</strong>
             </div>
