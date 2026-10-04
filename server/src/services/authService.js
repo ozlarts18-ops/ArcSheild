@@ -1,10 +1,13 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { OAuth2Client } from 'google-auth-library';
 import { SECURITY_CONFIG } from '../config/security.js';
 import { redisService } from './redisService.js';
 import { auditLogger } from './auditLogger.js';
 import { User } from '../models/User.js';
 import mongoose from 'mongoose';
+
+const googleClient = new OAuth2Client();
 
 // In-memory credential store when DB is in fallback mode
 // In-memory fallback for offline development mode (Admin data is strictly stored in MongoDB)
@@ -255,6 +258,313 @@ export const authService = {
       refreshToken,
       user: safeAdmin
     };
+  },
+
+  /**
+   * Authenticate a Worker via Google Identity Services ID Token
+   */
+  async authenticateGoogle(credential, ip = '127.0.0.1', userAgent = 'Unknown') {
+    if (!credential || typeof credential !== 'string') {
+      return {
+        success: false,
+        status: 400,
+        message: 'Google credential token is required.'
+      };
+    }
+
+    let payload = null;
+    try {
+      const clientId = SECURITY_CONFIG.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+      const verifyOptions = {
+        idToken: credential
+      };
+      if (clientId) {
+        verifyOptions.audience = clientId;
+      }
+
+      const ticket = await googleClient.verifyIdToken(verifyOptions);
+      payload = ticket.getPayload();
+
+      if (!payload || !payload.sub) {
+        throw new Error('Google token payload missing subject (sub)');
+      }
+
+      // Verify token issuer
+      const validIssuers = ['accounts.google.com', 'https://accounts.google.com'];
+      if (!validIssuers.includes(payload.iss)) {
+        throw new Error(`Invalid token issuer: ${payload.iss}`);
+      }
+
+      // If audience was configured, ensure match
+      if (clientId && payload.aud !== clientId) {
+        throw new Error('Audience mismatch on Google ID token');
+      }
+    } catch (err) {
+      await auditLogger.logEvent({
+        eventType: 'GOOGLE_LOGIN_FAILURE',
+        role: 'ANONYMOUS',
+        ipAddress: ip,
+        userAgent,
+        resource: '/api/auth/google',
+        action: 'POST',
+        success: false,
+        metadata: { reason: 'Token verification failed', error: err.message }
+      });
+
+      return {
+        success: false,
+        status: 401,
+        message: 'Google authentication failed. The token is invalid, expired, or untrusted.'
+      };
+    }
+
+    const googleId = payload.sub;
+    const normalizedEmail = (payload.email || '').toLowerCase().trim();
+    const emailVerified = !!payload.email_verified;
+    const name = payload.name || payload.given_name || 'ArcShield Worker';
+    const picture = payload.picture || '';
+
+    if (!normalizedEmail) {
+      return {
+        success: false,
+        status: 400,
+        message: 'Google account must have an associated email address.'
+      };
+    }
+
+    const isDbConnected = mongoose.connection.readyState === 1;
+
+    try {
+      let user = null;
+      let isNewAccount = false;
+      let isAccountLinked = false;
+
+      if (isDbConnected) {
+        // 1. Check existing account by googleId first (primary Google identifier)
+        user = await User.findOne({ googleId });
+
+        if (user) {
+          // Prevent Google from accessing ADMIN role accounts
+          if (user.role === 'ADMIN') {
+            await auditLogger.logEvent({
+              eventType: 'GOOGLE_LOGIN_FAILURE',
+              userId: user.userId,
+              role: 'ADMIN',
+              ipAddress: ip,
+              userAgent,
+              resource: '/api/auth/google',
+              action: 'POST',
+              success: false,
+              metadata: { reason: 'Admin accounts cannot authenticate via worker Google sign-in' }
+            });
+
+            return {
+              success: false,
+              status: 403,
+              message: 'Administrative accounts must authenticate via dedicated administrative login.'
+            };
+          }
+
+          // Update user activity
+          user.lastLogin = new Date();
+          if (!user.avatar && picture) user.avatar = picture;
+          await user.save();
+        } else {
+          // 2. Check if an account already exists with the same email
+          const existingByEmail = await User.findOne({ email: normalizedEmail });
+
+          if (existingByEmail) {
+            // Never permit Google auth to take over or grant access to ADMIN accounts
+            if (existingByEmail.role === 'ADMIN') {
+              await auditLogger.logEvent({
+                eventType: 'GOOGLE_LOGIN_FAILURE',
+                userId: existingByEmail.userId,
+                role: 'ADMIN',
+                ipAddress: ip,
+                userAgent,
+                resource: '/api/auth/google',
+                action: 'POST',
+                success: false,
+                metadata: { reason: 'Admin accounts cannot be linked via worker Google sign-in' }
+              });
+
+              return {
+                success: false,
+                status: 403,
+                message: 'Administrative accounts must authenticate via dedicated administrative login.'
+              };
+            }
+
+            // Conflict check: Already linked to a different Google account
+            if (existingByEmail.googleId && existingByEmail.googleId !== googleId) {
+              return {
+                success: false,
+                status: 409,
+                message: 'This email is already associated with a different Google identity.'
+              };
+            }
+
+            // Secure account linking only if Google email is verified
+            if (!emailVerified) {
+              return {
+                success: false,
+                status: 400,
+                message: 'Google email address is not verified by Google.'
+              };
+            }
+
+            // Link the verified Google identity to the existing user
+            existingByEmail.googleId = googleId;
+            existingByEmail.authProvider = existingByEmail.passwordHash ? 'both' : 'google';
+            if (!existingByEmail.avatar && picture) existingByEmail.avatar = picture;
+            existingByEmail.lastLogin = new Date();
+            await existingByEmail.save();
+
+            user = existingByEmail;
+            isAccountLinked = true;
+          } else {
+            // 3. Create a new USER (Role is STRICTLY USER, never ADMIN)
+            user = await User.create({
+              userId: `USR-${Date.now().toString().slice(-4)}`,
+              name,
+              email: normalizedEmail,
+              googleId,
+              authProvider: 'google',
+              role: 'USER',
+              trade: 'Welding & Fabrication',
+              workshop: 'Welding Bay 01',
+              assignedHelmetId: 'ARC-001',
+              avatar: picture,
+              isActive: true,
+              lastLogin: new Date()
+            });
+
+            isNewAccount = true;
+          }
+        }
+      } else {
+        // In-memory fallback for offline test environments
+        user = inMemoryUsers.find(u => u.googleId === googleId);
+        if (user) {
+          if (user.role === 'ADMIN') {
+            return {
+              success: false,
+              status: 403,
+              message: 'Administrative accounts must authenticate via dedicated administrative login.'
+            };
+          }
+        } else {
+          const existingByEmail = inMemoryUsers.find(u => u.email === normalizedEmail);
+          if (existingByEmail) {
+            if (existingByEmail.role === 'ADMIN') {
+              return {
+                success: false,
+                status: 403,
+                message: 'Administrative accounts must authenticate via dedicated administrative login.'
+              };
+            }
+            existingByEmail.googleId = googleId;
+            existingByEmail.authProvider = existingByEmail.passwordHash ? 'both' : 'google';
+            user = existingByEmail;
+            isAccountLinked = true;
+          } else {
+            user = {
+              id: `USR-${Date.now().toString().slice(-4)}`,
+              name,
+              email: normalizedEmail,
+              googleId,
+              authProvider: 'google',
+              role: 'USER',
+              trade: 'Welding & Fabrication',
+              workshop: 'Welding Bay 01',
+              assignedHelmetId: 'ARC-001',
+              avatar: picture,
+              lastLogin: new Date()
+            };
+            inMemoryUsers.push(user);
+            isNewAccount = true;
+          }
+        }
+      }
+
+      const safeUser = user.toSafeObject ? user.toSafeObject() : {
+        id: user.id || user.userId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        trade: user.trade,
+        workshop: user.workshop,
+        assignedHelmetId: user.assignedHelmetId || 'ARC-001',
+        authProvider: user.authProvider || 'google',
+        avatar: user.avatar || picture
+      };
+
+      // Log specific audit events
+      if (isNewAccount) {
+        await auditLogger.logEvent({
+          eventType: 'GOOGLE_ACCOUNT_CREATED',
+          userId: safeUser.id,
+          role: safeUser.role,
+          ipAddress: ip,
+          userAgent,
+          resource: '/api/auth/google',
+          action: 'POST',
+          success: true,
+          metadata: { email: normalizedEmail, googleId }
+        });
+      } else if (isAccountLinked) {
+        await auditLogger.logEvent({
+          eventType: 'GOOGLE_ACCOUNT_LINKED',
+          userId: safeUser.id,
+          role: safeUser.role,
+          ipAddress: ip,
+          userAgent,
+          resource: '/api/auth/google',
+          action: 'POST',
+          success: true,
+          metadata: { email: normalizedEmail, googleId }
+        });
+      }
+
+      await auditLogger.logEvent({
+        eventType: 'GOOGLE_LOGIN_SUCCESS',
+        userId: safeUser.id,
+        role: safeUser.role,
+        ipAddress: ip,
+        userAgent,
+        resource: '/api/auth/google',
+        action: 'POST',
+        success: true
+      });
+
+      // Issue ArcShield JWT Access and Refresh Tokens
+      const token = this.generateAccessToken(safeUser);
+      const refreshToken = this.generateRefreshToken(safeUser);
+
+      return {
+        success: true,
+        token,
+        refreshToken,
+        user: safeUser
+      };
+    } catch (err) {
+      await auditLogger.logEvent({
+        eventType: 'GOOGLE_LOGIN_FAILURE',
+        role: 'ANONYMOUS',
+        ipAddress: ip,
+        userAgent,
+        resource: '/api/auth/google',
+        action: 'POST',
+        success: false,
+        metadata: { error: err.message }
+      });
+
+      return {
+        success: false,
+        status: 500,
+        message: 'Internal server error during Google authentication.'
+      };
+    }
   },
 
   /**

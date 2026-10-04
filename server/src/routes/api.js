@@ -8,6 +8,7 @@ import { authLimiter, apiLimiter, sensorLimiter, reportLimiter } from '../middle
 import { validateBody } from '../middleware/validate.js';
 import { 
   loginSchema, 
+  googleAuthSchema,
   registerSchema, 
   adminLoginSchema, 
   sensorIngestionSchema, 
@@ -45,6 +46,28 @@ export const createApiRouter = (state, simulator, io) => {
     const userAgent = req.headers['user-agent'] || 'Unknown';
 
     const result = await authService.authenticateUser(email, password, ip, userAgent);
+    if (!result.success) {
+      return res.status(result.status || 401).json({
+        success: false,
+        message: result.message
+      });
+    }
+
+    res.json({
+      success: true,
+      token: result.token,
+      refreshToken: result.refreshToken,
+      user: result.user
+    });
+  });
+
+  // Google Sign-In Authentication (Verifies Google ID Token & issues ArcShield JWT session)
+  router.post('/auth/google', authLimiter, validateBody(googleAuthSchema), async (req, res) => {
+    const { credential } = req.body;
+    const ip = req.ip || req.connection?.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+
+    const result = await authService.authenticateGoogle(credential, ip, userAgent);
     if (!result.success) {
       return res.status(result.status || 401).json({
         success: false,

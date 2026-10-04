@@ -76,6 +76,13 @@ export async function loginUserApi(email, password) {
   });
 }
 
+export async function loginGoogleApi(credential) {
+  return secureFetch('/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ credential })
+  });
+}
+
 export async function registerUserApi(data) {
   return secureFetch('/auth/register', {
     method: 'POST',

@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import GoogleSignInButton from '../../components/auth/GoogleSignInButton';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { loginUser } = useAuth();
+  const { loginUser, loginGoogle } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -101,6 +102,39 @@ export default function LoginPage() {
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
+
+        {/* Separator */}
+        <div className="relative my-4">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200"></div>
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-2 text-slate-400 font-semibold tracking-wider text-[11px]">OR</span>
+          </div>
+        </div>
+
+        {/* Google Sign-In */}
+        <GoogleSignInButton
+          text="continue_with"
+          disabled={loading}
+          onSuccess={async (credential) => {
+            setError('');
+            setLoading(true);
+            try {
+              const res = await loginGoogle(credential);
+              if (res.success) {
+                navigate('/dashboard');
+              } else {
+                setError(res.error || 'Google authentication failed.');
+              }
+            } catch (err) {
+              setError('Connection error during Google authentication.');
+            } finally {
+              setLoading(false);
+            }
+          }}
+          onError={(msg) => setError(msg)}
+        />
 
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
           <span>Need an account?</span>

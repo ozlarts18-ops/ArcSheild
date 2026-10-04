@@ -19,6 +19,12 @@ export const adminLoginSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters').max(128)
 });
 
+export const googleAuthSchema = z.object({
+  credential: z.string({ required_error: 'Google ID token credential is required' })
+    .min(10, 'Credential must be a valid token string')
+    .max(5000, 'Credential token exceeds maximum length')
+});
+
 export const sensorIngestionSchema = z.object({
   helmetId: z.string().min(3).max(30),
   timestamp: z.string().optional(),

@@ -53,6 +53,9 @@ export const SECURITY_CONFIG = {
   // Password Hashing
   BCRYPT_SALT_ROUNDS: 12,
 
+  // Google OAuth Configuration
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+
   // CORS Allowed Origins
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
   ALLOWED_ORIGINS: parseAllowedOrigins(),

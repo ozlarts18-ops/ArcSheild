@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginUserApi, registerUserApi, loginAdminApi, logoutApi } from '../services/api';
+import { loginUserApi, loginGoogleApi, registerUserApi, loginAdminApi, logoutApi } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -32,6 +32,16 @@ export function AuthProvider({ children }) {
       return { success: true, user: authUser };
     }
     return { success: false, error: res.message || res.error || 'Unable to authenticate with the provided credentials.' };
+  };
+
+  const loginGoogle = async (credential) => {
+    const res = await loginGoogleApi(credential);
+    if (res.success && res.user) {
+      const authUser = { ...res.user, token: res.token, refreshToken: res.refreshToken };
+      setCurrentUser(authUser);
+      return { success: true, user: authUser };
+    }
+    return { success: false, error: res.message || res.error || 'Google authentication failed' };
   };
 
   const registerUser = async (data) => {
@@ -71,6 +81,7 @@ export function AuthProvider({ children }) {
         isAuthenticated: !!currentUser,
         isAdmin: currentUser?.role === 'ADMIN',
         loginUser,
+        loginGoogle,
         registerUser,
         loginAdmin,
         logout,

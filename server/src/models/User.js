@@ -25,7 +25,23 @@ const userSchema = new mongoose.Schema({
   },
   passwordHash: {
     type: String,
-    required: true
+    required: function () {
+      return this.authProvider === 'local' || !this.googleId;
+    }
+  },
+  googleId: {
+    type: String,
+    default: undefined
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google', 'both'],
+    default: 'local',
+    index: true
+  },
+  avatar: {
+    type: String,
+    default: ''
   },
   role: {
     type: String,
@@ -62,8 +78,19 @@ const userSchema = new mongoose.Schema({
   collection: 'users'
 });
 
+// Index googleId with unique constraint only when present as a string
+userSchema.index(
+  { googleId: 1 },
+  { 
+    unique: true, 
+    sparse: true, 
+    partialFilterExpression: { googleId: { $type: 'string' } } 
+  }
+);
+
 // Password verification helper method
 userSchema.methods.comparePassword = async function (candidatePassword) {
+  if (!this.passwordHash) return false;
   return bcrypt.compare(candidatePassword, this.passwordHash);
 };
 
@@ -84,6 +111,8 @@ userSchema.methods.toSafeObject = function () {
     workshop: this.workshop,
     assignedHelmetId: this.assignedHelmetId,
     phoneNumber: this.phoneNumber,
+    authProvider: this.authProvider || 'local',
+    avatar: this.avatar || '',
     createdAt: this.createdAt
   };
 };
