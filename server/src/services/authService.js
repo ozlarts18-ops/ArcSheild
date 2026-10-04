@@ -7,6 +7,7 @@ import { User } from '../models/User.js';
 import mongoose from 'mongoose';
 
 // In-memory credential store when DB is in fallback mode
+// In-memory fallback for offline development mode (Admin data is strictly stored in MongoDB)
 const inMemoryUsers = [
   {
     id: 'USR-102',
@@ -17,28 +18,9 @@ const inMemoryUsers = [
     trade: 'Industrial Welding',
     workshop: 'Fabrication Bay 4',
     assignedHelmetId: 'ARC-001'
-  },
-  {
-    id: 'ADM-001',
-    name: 'O. Sharma',
-    email: 'admin@iti.edu',
-    passwordHash: bcrypt.hashSync('admin123', 10),
-    role: 'ADMIN',
-    trade: 'Directorate Lead',
-    workshop: 'Control Center',
-    assignedHelmetId: 'N/A'
-  },
-  {
-    id: 'ADM-002',
-    name: 'Supervisor Sarah',
-    email: 'admin@arcshield.local',
-    passwordHash: bcrypt.hashSync('admin123', 10),
-    role: 'ADMIN',
-    trade: 'Chief Safety Officer',
-    workshop: 'Central Monitoring Room',
-    assignedHelmetId: 'N/A'
   }
 ];
+
 
 export const authService = {
   /**

@@ -66,9 +66,8 @@ export async function initializeDatabase() {
     // 2. Safe Cold-Start Entity Seeding (Only if collections are empty)
     const userCount = await User.countDocuments();
     if (userCount === 0) {
-      console.log('[DB Init] Seeding initial user accounts...');
+      console.log('[DB Init] Seeding initial worker account...');
       const defaultPasswordHash = await User.hashPassword('password123');
-      const defaultAdminHash = await User.hashPassword('admin123');
 
       const initialUsers = [
         {
@@ -80,26 +79,6 @@ export async function initializeDatabase() {
           trade: 'Industrial Welding',
           workshop: 'Fabrication Bay 4',
           assignedHelmetId: 'ARC-001'
-        },
-        {
-          userId: 'ADM-001',
-          name: 'O. Sharma',
-          email: 'admin@iti.edu',
-          passwordHash: defaultAdminHash,
-          role: 'ADMIN',
-          trade: 'Directorate Lead',
-          workshop: 'Control Center',
-          assignedHelmetId: 'N/A'
-        },
-        {
-          userId: 'ADM-002',
-          name: 'Supervisor Sarah',
-          email: 'admin@arcshield.local',
-          passwordHash: defaultAdminHash,
-          role: 'ADMIN',
-          trade: 'Chief Safety Officer',
-          workshop: 'Central Monitoring Room',
-          assignedHelmetId: 'N/A'
         }
       ];
 
